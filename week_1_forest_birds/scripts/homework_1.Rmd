@@ -9,3 +9,224 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Dear Dr. Edwards, I hope this is my worst homework. Or, at least, I hope this *isn't* my best homework. 
+
+# Load Libraries
+```{r}
+library(tidyverse)
+library(here)
+library(ggeffects)
+library(GGally)
+library(effects)
+library(ggResidpanel)
+library(car)
+```
+
+# Upload Data, remove species not mentioned in prompt(?)
+I am a little concerned I am making a bad mistake, but the 'oma'o and the elepaio that weren't mentioned in the prompt and also do not have very many observations, so I am going to assume they are left out on purpose.
+```{r}
+raw <- read_csv(here("week_1_forest_birds", "data","foraging.height.edit.csv")) %>%
+  filter(SPECIES != "OMAO") %>%
+  filter(SPECIES != "HAEL") #I don't know why my original code didn't work and I am too tired to fix my putrid whoopsie
+```
+
+
+# 1) 
+
+## How many observations are there of each bird species in each experimental treatment? 
+```{r}
+raw %>%
+  count(SPECIES, Rat_Removal, sort = TRUE)
+```
+
+
+## Make a boxplot or violinplot to show the distribution of foraging heights of each bird species in each experimental treatment.
+
+```{r}
+boxplot1 <- raw %>%
+  ggplot(aes(x = SPECIES, y = foraging.ht.m, color = Rat_Removal))+
+  geom_violin() +
+  geom_dotplot(dotsize= 0.2, binaxis='y', stackdir='center',
+                 position=position_dodge(1), binwidth = .75) +
+  theme_bw()
+  boxplot1
+```
+
+
+
+
+## What have you learned so far?
+
+So far I've learned there's 6 bird species total observed, and that the foraging height for all birds ranges from about 2 to about 27 meters. There are also quite a lot of apapane observations, and not a lot of 'Oma'o or ... I assume HAEL is the Hawaiian Elapaio now okay I got it. It's probably not worth looking at 'oma'o or elapaio here anyway I bet. Should I remove them and just do the species you listed? Maybe? AH!- Note. I did.
+
+
+# 2)
+
+## Now make a plot showing the mean foraging height of each bird species in each treatment. include error bars displaying +/- one standard error of the mean.
+
+```{r}
+#Summary table (so I can look at it and really give myself a high five)
+summary <- raw %>%
+    group_by(SPECIES,Rat_Removal) %>%
+  summarize(mean_height = mean(foraging.ht.m),
+            n = n(), #this takes the number of observations and names it n (527)
+            sd = sd(foraging.ht.m)) %>%
+  mutate(se=sd/sqrt(n))
+
+
+#Make a plot from the summary
+
+meanplot2 <- summary %>%
+ggplot(aes(x = SPECIES, y= mean_height, color = Rat_Removal))+
+  geom_pointrange(aes(x=SPECIES, ymin=mean_height-se, ymax=mean_height+se), alpha=0.9, size=0.5,position= position_dodge(width=0.5)) +
+  theme_bw()
+
+
+meanplot2
+```
+
+## What is the meaning of the standard error of the mean? 
+The standard error of the mean tells us how much the sample mean varies around the whole population mean. Compare to standard deviation, which tells how much the data in a sample varies around its own mean. 
+
+## How does this plot differ from the plot in #1?
+This plot makes it much clearer that, when areas are treated for rats, the average forage height for birds is lower. 
+
+
+# 3) Fit a linear model 
+
+test whether the bird species differ in foraging height, whether the rat removal treatment affects foraging height, and whether the effect of the rat removal differs between the bird species. 
+
+```{r}
+# Model 
+rat.species.model <- lm(foraging.ht.m ~ Rat_Removal*SPECIES, data = raw)
+#Summary 
+summary(rat.species.model)
+```
+
+## Assess Residual plots
+```{r}
+#Residual plots 
+resid_panel(rat.species.model, plots = c('resid', 'qq', 'lev', 'hist'))
+```
+I think... this... looks... fine. I am a little worried about how to interpret the  HOWEVER, I'm not married to that viewpoint. 
+
+
+
+
+## Report F-Tests for the terms in the model
+(note that if the model contains multiple predictors, these are partial residuals)
+```{r}
+#F stat
+Anova <- Anova(rat.species.model)
+Anova
+```
+OK. I am unsure about F-tests at this point. Not only how to report them, but I am not sure yet what they are for and now to read them despite reading things all week. BUT I WILL LEARN. Would I do, uh, F 3,498 = 0.4, p = 0.699 showing that rat removal did not affect bird foraging height differently by species? 
+
+
+## Create an effects plot displaying the fitted effects
+-- magnitudes of the modeled relationships-- look at the slope coefficent for linear regression.- I am confused by this hint.  
+
+```{r}
+#Effects Plot (?)
+plot(ggeffect(rat.species.model, terms = c('SPECIES','Rat_Removal')))
+```
+
+
+
+## How do you interpret the results? What are the magnitudes of the effects?
+ 
+AH. Okay. Er. No rat means bird go lower for food. The species have very slightly different foraging height ranges, but the rat removal didn't affect one species more than others. I am not sure how to assess magnitude of the effects here yet.  
+ 
+ 
+ 
+ 
+# 4) Make a new model that adds kipuka area and arthopod biomass as predictors
+
+##  Kipuka area and arthopod biomass are both continuous predictors – before you add them to the model, make some scatterplots to assess whether these predictors should be transformed when including them in the model.
+
+When assessing predictors for transformation, it doesn’t matter if the predictors are normally
+distributed (this only matters for the response variable) – *what matters is whether
+the predictors are very skewed,* such that a few outlying points will have a large
+influence on a fitted regression line. For skewed predictors, a log or square root
+transformation will generally help.
+
+```{r}
+#scatterplot showing raw predictors
+scatter <- raw %>%
+  ggplot(aes(x = Area_ha, y = tot.arth.bm, color = Rat_Removal))+
+  geom_point()+
+  theme_bw()
+  scatter
+#scatterplot showing log transformed predictors
+scatterlog <- raw %>%
+  ggplot(aes(x = log(Area_ha), y = log(tot.arth.bm), color = Rat_Removal))+
+  geom_point()+
+  theme_bw()
+  scatterlog
+  
+```
+That does look better! I think? 
+
+## Make a new model that adds kipuka area and arthopod biomass as predictors, and include interactions that test whether the treatment effect depends on these additional predictors.
+
+So far we have examined the effect of the rat removal, but we have not considered
+the role of kipuka size, or the role of food availability (which is influenced in part
+by kipuka size). 
+```{r}
+# Model 
+kipuka.model <- lm(foraging.ht.m ~ Rat_Removal * log(Area_ha) * log(tot.arth.bm), data = raw)
+#Summary 
+summary(kipuka.model)
+```
+
+
+
+
+
+
+## Report F-tests and effects plots. 
+```{r}
+
+#Residual plots 
+resid_panel(kipuka.model, plots = c('resid', 'qq', 'lev', 'hist'))
+
+#F test: 
+Anova(kipuka.model)
+
+```
+ Right now, I think reporting this looks like F 1,498 = 45, p= 5x10^-11 that supports rat removal, area and biomass all influence foraging height? Do I report F tests for anythingn with a significant p value? 
+
+
+```{r}
+#Effects Plot 
+plot(ggeffect(kipuka.model, terms = c('tot.arth.bm', 'Rat_Removal')))
+plot(ggeffect(kipuka.model, terms = c('Area_ha', 'Rat_Removal')))
+```
+
+## How do the results of this model differ from the model in #3? 
+Did I do this right? Is any of this right? Is this on? 
+
+Er, I don't think I did this correctly, but it does look like the more arthropod biomass you accumulate, there is a fairly large separation between foraging areas between treated and untreated plots. Treated plots mean that birds will trend to forage lower than birds in untreated plots. I don't know if my effects plot is great since the scale seems kind of weird to me. Also, I may have done all of this very wrong. 
+
+## How do you interpret the results at this stage?
+
+It looks like arthropod biomass and kipuka size effect the response variable in treatment groups.  
+
+
+
+
+# 5) Add DATE as a factor to the linear model from #4.
+```{r}
+date.model <- lm(foraging.ht.m ~ Rat_Removal * log(Area_ha) * log(tot.arth.bm) + DATE, data = raw)
+#Summary 
+summary(date.model)
+```
+
+
+## How does the inclusion of the date of sampling alter the model results? 
+I am not confident enough I did the formula correctly to really make a good guess. I have a growth mindset and I will LEARN I SWEAR. 
+
+## Why do you think that is?
+
+Date might parse out pseudo-replication. 
+Stick a fork in me! I should have signed up for baby math. 
