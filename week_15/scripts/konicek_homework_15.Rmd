@@ -1,0 +1,86 @@
+---
+title: "konicek_homework_15"
+author: "Kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries 
+```{r}
+library(here)
+library(tidyverse)
+```
+
+## Data
+```{r}
+raw_man <- read_csv(here("week_15", "data", "mangrove_fishpond_zooplankton_edit.csv"))
+```
+
+
+
+
+
+Mangroves are an intertidal foundation species in their native habitats, with wide-ranging effects
+on biodiversity and ecosystem services. In Hawaiʻi mangroves are an introduced species that has
+spread readily into mudflat habitats as well as traditional Hawaiian fishponds (loko iʻa), greatly
+changing the physical and chemical environment. The full impact of introduced mangroves on
+coastal ecology is not well understood, and Lewis and Granek (2021) investigated how coastal
+zooplankton are influenced by mangroves as well as traditional fishpond structures.
+The attached file contains 28 samples of zooplankton community composition, collected from 20
+locations within 10 sites. 7 of the sites were fishponds, while 3 of the sites were open coast.
+Within each site one sample was taken within a mangrove-dominated portion of the coast, while a
+paired sample was taken from a non-mangrove location. A few of the 20 locations were sampled
+twice, leading to 28 total samples. In this assignment we will use the zooplankton sampled using
+light traps.
+The authors compiled a variety of measurements of the environmental context at each of the ten
+sites. These are stored in columns 37:49 in the attached file, and include the length of mangrove-
+dominated shoreline, the length of non-mangrove shoreline, the percent mangrove shoreline, the
+area of the fishpond (this corresponds to the neighboring fishpond for the open coast sites), four
+measurements of mangrove leaves at the site (d13C, C content, d15N, and N content), and a
+number of variables characterizing the surrounding watershed (relief in feet, percent mature tree
+cover, mean annual precipitation, percent impervious substrate, and percent of the land that is
+developed). Columns 8:35 contain counts of different taxa of zooplankton, including holoplankton
+and meroplankton. The column names are largely self-explanatory, but noted that crab larvae are
+divided into multiple stages (three forms of megalopae, zoea, and postlarval), and para.cope =
+parasitic copepods.
+
+
+# 1. 
+
+Start by characterizing how the environmental variables (columns 37:49) are correlated
+with each other across the ten sites, using a principal components analysis. Provide an
+appropriate plot and summary of the PCA results. What are the major patterns of variation
+across these sites?
+
+# 2. 
+
+Next, characterize the major axes of variation in zooplankton community composition
+(i.e., an unconstrained ordination). Consider how to transform and standardize the
+community data before the analysis. Provide an appropriate plot and interpret what it
+means. Finally, use envfit() to assess which environmental variables are correlated with the
+major axes of community composition.
+
+# 3.
+
+Although envfit() is a useful tool, it does not directly ask how well community composition
+can be explained by a set of environmental variables. Use a constrained ordination to ask
+this question. How much of variation in community composition can be explained by the
+set of environmental variables? How much can be explained by the first two axes? What
+do those axes represent (visualizing with a triplot will help)?
+
+# 4. 
+
+The authors were interested in whether zooplankton composition is affected by the
+presence of mangroves, and whether composition is affected by the presence of a
+fishpond. Use a PERMANOVA to test these questions. Considering all the results together,
+what have you learned about this system?
+
+
+
+
+
+

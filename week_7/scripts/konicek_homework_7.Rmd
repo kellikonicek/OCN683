@@ -1,0 +1,273 @@
+---
+title: "konicek_homework_7"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+## Load Libraries
+```{r}
+library(tidyverse)
+library(here)
+library(ggeffects)
+library(GGally)
+library(effects)
+library(car)
+library(arm)
+library(glmmTMB)
+#install.packages("DHARMa")
+library(DHARMa)
+```
+
+## Upload Data
+```{r}
+raw_coll <- read_csv(here("week_7", "data","collembola_revised_2025.csv"))
+```
+
+
+
+ _For this assignment we will focus on springtail abundance and how these are affected by temperature and mite predation._
+
+_The experiment ran in three different temperature regimes: 12–15°C , 17–20°C, and 22–25°C. In total, we established four communities (two prey species, two prey species + predator 1, two prey species + predator 2, and two prey species + predator 1 + predator 2) across three temperature regimes (12–15°C, 17–20°C, and 22–25°C), each replicated five times. In the attached dataset we will use the columns total.prey (total Collembola count), temp.factor (the temperature treatment), and predators (the predator treatment)._
+
+```{r}
+coll <- raw_coll %>%
+  dplyr::select(total.prey,temp.factor,predators) %>%
+  ggplot(aes(x=temp.factor, y= total.prey, colour = predators))+
+  geom_point()
+coll
+hist(raw_coll$total.prey)
+
+raw_coll$predators<-factor(raw_coll$predators, levels= c("none","HA","HM","HA+HM"))
+
+```
+lookinʻ at the raw numbers it looks like higher temperature positively influences Collembola numbers, but itʻs hard to tell if it has the same effect when predators are introduced. Also, the data looks very overdispersed from the histogram.
+
+# 1. 
+_First use an appropriate ‘standard’ model for counts (i.e., not zero-inflated) to ask whether the abundance of Collembola is affected by temperature, by the presence of one or more predators, and whether the effect of predators depends on temperature. Use the function glmmTMB() to fit the model, because later we will compare this model to others fit with this function._
+
+
+```{r}
+
+#poisson and nbinom model
+mod.poi = glmmTMB(total.prey ~ temp.factor*predators, data = raw_coll, family = 'poisson')
+mod.nb = glmmTMB(total.prey ~ temp.factor*predators, data = raw_coll, family = 'nbinom2')
+
+#calculate dispersion parameter
+sum(residuals(mod.poi, type = "pearson")^2)/(nrow(raw_coll) - length(coef(mod.poi)))
+sum(residuals(mod.nb, type = "pearson")^2)/(nrow(raw_coll) - length(coef(mod.nb)))
+```
+Letʻs go with the negative bionom! 
+
+
+_Plot fitted effects and perform likelihood ratio tests on the relevant terms. To perform marginal tests you will want to compare pairs of models using the function anova(). So, for each term you want to test, compare a model with this term to a model without this term._
+
+Trying residuals with Dharma
+```{r}
+simulationOutput1 <- simulateResiduals(fittedModel = mod.nb)
+plot(simulationOutput1)
+```
+EW! 
+
+
+fitted effects: 
+```{r}
+plot(ggpredict(mod.nb, terms=c("temp.factor","predators")))
+```
+
+
+models,likelihood tests: 
+```{r}
+mod.nb.null <-glmmTMB(total.prey ~ 1, data = raw_coll, family = 'nbinom2')
+mod.nb.predator <- glmmTMB(total.prey ~ predators, data = raw_coll, family = 'nbinom2')
+mod.nb.temp <- glmmTMB(total.prey ~ temp.factor, data = raw_coll, family = 'nbinom2')
+
+#Likelihood tests for the models:
+anova(mod.nb.null,mod.nb.predator,mod.nb.temp,mod.nb, test = "Chisq") #can I compare more than two at a time?
+```
+Attempt at a marginal test without Anova()?
+```{r}
+drop1(mod.nb.null, test = 'Chisq')
+drop1(mod.nb.predator, test = 'Chisq')
+drop1(mod.nb.temp, test = 'Chisq')
+drop1(mod.nb, test = 'Chisq')
+
+```
+ok- notes say that Anova() doesnʻt work for marginal chi-squared likelihood ratio tests-- but it looks like it is just assessing the interaction and not the main predictors? Do I have to write my formula different? No, I just got the same thing. I did drop1 for all the models, I don't know if that's too much. It says nothing new, at least at a glance.
+
+
+_How do you interpret the results at this stage?_
+Well it looks like weʻve got a whole lotta nothing so far! Without accounting for zero inflation, it actually looks like the model with the lowest AIC is the null model. 
+
+
+# 2.
+
+_Use glmmTMB to fit zero-inflated count model(s). You should decide how many to fit, and which kind of probability distribution(s) to use. Use AIC to do model selection, to determine whether incorporating zero inflation improves model fit._
+
+```{r}
+#zero-inflated negative binomial model
+mod.nbz.null = glmmTMB(total.prey ~ 1, ziformula =~ 1, data = raw_coll, family = 'nbinom2')
+mod.nbz.predator = glmmTMB(total.prey ~ predators, ziformula =~ 1, data = raw_coll, family = 'nbinom2')
+mod.nbz.temp = glmmTMB(total.prey ~ temp.factor, ziformula =~ 1, data = raw_coll, family = 'nbinom2')
+mod.nbz.all = glmmTMB(total.prey ~ predators*temp.factor, ziformula =~ 1, data = raw_coll,family='nbinom2')
+
+#likelihood ratio tests with all the models. I know this is kind of throwing the kitchen sink at it, I'm not sure if that's the point for this exercise?
+anova(mod.nbz.null,mod.nbz.temp,mod.nbz.predator,mod.nbz.all,mod.nb.null,mod.nb.predator,mod.nb.temp,mod.nb)
+```
+comparing the non zero-inflated negative binomial models has a much higher AIC than the zero-inflated negative binomial. 
+
+
+Trying residuals with Dharma
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod.nbz.all)
+plot(simulationOutput)
+```
+better! Cool! 
+
+fitted effects: 
+```{r}
+plot(ggpredict(mod.nbz.all, terms=c("temp.factor","predators")))
+```
+
+
+_Using the best model (i.e., the lowest AIC), perform marginal likelihood ratio tests on the predictors, again using anova() to compare pairs of models._
+
+I do NOT KNOW if I am doing this right. Here's my attempt at marginal tests using drop1() for all the zero-inflated models, which I do believe are better for this right now:
+```{r}
+drop1(mod.nbz.null, test = 'Chisq')
+drop1(mod.nbz.predator, test = 'Chisq')
+drop1(mod.nbz.temp, test = 'Chisq')
+drop1(mod.nbz.all, test = 'Chisq')
+anova(mod.nbz.null,mod.nbz.temp,mod.nbz.predator,mod.nbz.all)
+```
+
+
+
+_How have the results changed from #1?_
+I'm not sure what I did that is wonky re: looking at the predator model with a marginal test vs. LTR, but it looks like a zero-inflated model factoring in only temperature has the lowest AIC. From the drop 1 tests, though, it looks like predators may also contribute significantly? at least to the null test. The anova likelihood ratio test says the interaction might be significant, though the drop 1 marginal test doesn't.Maybe because the full model also has temperature in it, and the anova() isn't separating those two predictors in the test? 
+
+
+ANYWAY, I guess using zero inflation shows that temperature is a significant predictor, though that doesn't show up as a signal much in the fitted effects plot. However, I bet those zeros happened because predators are there, so those zeros might have a pattern in itself.  
+
+
+
+# 3.
+_Let’s test the effect of predators, but treating all treatments with predators as the same._
+
+_Create a new column that recodes the predator treatment so that it only has two levels: predators or no predators._
+
+```{r}
+predate <- raw_coll %>%
+  mutate(predators = case_when(
+    predators == "none" ~ "none",  # Keep "none" as it is
+    TRUE ~ "predator"))
+```
+
+_Fit a model using the new predator predictor instead of the old one, and plot fitted effects and perform likelihood ratio tests as before (you only need to use the ‘best’ probability distribution model determined in #2)._
+
+
+```{r}
+mod.nbz.clump.null= glmmTMB(total.prey ~ 1, ziformula =~ 1, data = predate,family='nbinom2')
+mod.nbz.clump.temp= glmmTMB(total.prey ~ temp.factor, ziformula =~ 1, data = predate,family='nbinom2')
+mod.nbz.clump.pred= glmmTMB(total.prey ~ predators, ziformula =~ 1, data = predate,family='nbinom2')
+mod.nbz.clump = glmmTMB(total.prey ~ predators*temp.factor, ziformula =~ 1, data = predate,family='nbinom2')
+
+
+anova(mod.nbz.clump,mod.nbz.clump.temp,mod.nbz.clump.pred,mod.nbz.clump.null)
+plot(ggpredict(mod.nbz.clump, terms=c("temp.factor","predators")))
+summary(mod.nbz.clump)
+```
+
+
+_How do these results compare to what you saw previously?_
+
+AH! Well, these results show that predators -do- have a significant influence on the model now. Not only that, but the AIC for the model showing predator and temperature interactions is now the best performing model with the lowest AIC (665.44 vs. 679.45). Based on looking at the fitted effects plot, it looks like the effect of predators can be greater when the temp goes up, though the SE bars (I think that's it?) are really big.
+
+_Why do you think the results have changed?_
+
+I think the results changed because the type of predator is not as important for this total collembola analysis (it might be important if we separate the prey species). Rather, the presence/absence of predators creates a different signal when the temperature goes up. 
+
+_How do you interpret these patterns?_
+
+I think this means that there will be a pattern in the 0s we see, because predators do have an influence on prey numbers. It might just be that that influence comes from creating experimental units that have no springtails. It might be more likely to find that 0s are more likely in the two hotter treatments with predators than predators in the ambient temperature. 
+
+#4.
+
+_Use an appropriate zero-inflated model and allow the extra zeros to vary with temperature, predators, and the interaction between these treatments._
+
+```{r}
+mod.nbz2.all = glmmTMB(total.prey ~ predators*temp.factor, ziformula =~ predators*temp.factor, data = predate,
+family = 'nbinom2')
+mod.nbz2.p = glmmTMB(total.prey ~ predators*temp.factor, ziformula =~ predators, data = predate,
+family = 'nbinom2')
+mod.nbz2.t = glmmTMB(total.prey ~ predators*temp.factor, ziformula =~ temp.factor, data = predate,
+family = 'nbinom2')
+```
+
+
+
+_Use likelihood ratio tests to test these terms._
+
+```{r}
+anova(mod.nbz.clump,mod.nbz2.all, mod.nbz2.p, mod.nbz2.t,mod.nbz.clump.null)
+```
+
+Well DANG. It looks like the zero inflation might be connected to temperature increases after all? The model that varies zero inflation by temperature is the best performing out of all the options. 
+
+
+_try to plot zero-inflated effects by ‘manually’ by extracting model predictions_
+
+OK. I did try to ask ChatGPT for help coding this, but I looked up zprob and I think that's the type I need in order to understand the zero-inflated effects, based on reading the definitions. 
+
+```{r}
+# extract predictions
+predictions <- predict(mod.nbz2.all, type = "response", se = TRUE)
+
+# zero-inflation part
+zero_inflation <- predict(mod.nbz2.all, type = "zprob", se = TRUE)
+
+# create a data frame combining both prediction components and the data
+pred_df <- data.frame(
+  observed = predate$total.prey,  # observed counts of prey
+  count_pred = predictions$fit,   # predicted count values
+  count_se = predictions$se.fit,  # standard error for count predictions
+  zero_pred = zero_inflation$fit, # predicted zero-inflation probabilities
+  zero_se = zero_inflation$se.fit, # standard error for zero-inflation predictions
+  predators = predate$predators,
+  temp = predate$temp.factor
+)
+
+# Plot the zero-inflation effect (e.g., the probability of zero counts)
+ggplot(pred_df, aes(x = zero_pred, y = observed)) +
+  geom_point(aes(color = predators, shape = temp), alpha = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, color = "blue") +
+  labs(x = "zprob",
+    y = "total.prey") 
+
+```
+
+I think if I did this even mildly correctly, it looks like the probability of zeros goes up with temperature, and you're most likely to get zeros when it's at the hottest temp with predators. 
+
+
+_look at the model coefficients returned by summary() to interpret what’s going on with the extra zeros. It may be easier to interpret the coefficients if you use a model that removes the non-significant terms._ 
+
+
+```{r}
+summary(mod.nbz2.t)
+
+```
+
+
+_What is the pattern in the extra zeros according to this model?_
+
+Woof. Do I understand what the pattern is? From the conditional model, it looks like the higher temperatures increase the chance of having more springtails by about exp(1.6) or exp.(1.8). HOWEVER, it also looks like higher temperatures increase the chance of more zeros, based on the zero inflation model? 17-20C has exp(2.3) times more likely than the ambient temperature, and 22-25 is exp(3.5) times more likely to have zeros.
+
+_How does this pattern differ from the patterns in the count model?_
+
+well, for the non-zero inflate count model, nothing was significant. When you accound for zero-inflation, it looks like temperature has a major influence on total prey numbers. 

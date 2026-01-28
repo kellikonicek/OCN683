@@ -1,0 +1,174 @@
+---
+title: "konicek_homework_6"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+
+## Libraries
+```{r}
+library(here)
+library(tidyverse)
+library(ggeffects)
+library(car)
+library(ggResidpanel)
+```
+
+
+
+## Upload Data
+```{r}
+raw_pox <- read_csv(here("week_6", "data","Pox_Data_revised.csv"))
+```
+
+
+# 1.
+
+_The twelve sites have been coded as low/medium/high elevation. First,
+summarize the number of observations of each bird species at each elevation._
+```{r}
+raw_pox$Elev<-factor(raw_pox$Elev, levels= c("low","mid","high"))
+raw_pox$Species<-factor(raw_pox$Species, levels = c("APAP", "HAAM", "JAWE","IIWI"))
+name_pox <- raw_pox
+name_pox$Malaria <- factor(name_pox$Malaria)
+levels(name_pox$Malaria) <- c("No","Yes","Unknown")
+
+
+raw_pox%>%
+  group_by(Elev,Species)%>%
+  count(Species, sort = FALSE)
+```
+
+
+_Also, what is the prevalence of chronic malaria in the bird species at the
+different elevations?_
+  
+```{r}
+mal <- name_pox %>%
+  group_by(Elev,Species,Malaria)%>%
+  count(Malaria, sort = FALSE)%>% 
+  pivot_wider(names_from = Malaria, #column with names for new column 
+              values_from = n)%>% #column with the values
+  mutate(prevalence = Yes/sum(Yes,No))
+mal
+
+```
+
+I also wanted to look at prevalence of active pox: 
+```{r}
+name_pox$Activepox <- factor(name_pox$Activepox)
+levels(name_pox$Activepox) <- c("No","Yes","Unknown")
+
+pox <- name_pox %>%
+  group_by(Elev,Species,Activepox)%>%
+  count(Activepox, sort = FALSE)%>% 
+  pivot_wider(names_from = Activepox, #column with names for new column 
+              values_from = n)%>% #column with the values
+  mutate(prevalence = Yes/sum(Yes,No))
+pox
+```
+Even though low apapane is the baseline for the pox model, there sure isnʻt a lot of data points for that. Is that a problem? 
+
+_Note that some birds do not have a known malaria status
+(code = 2). Only use birds with code = 0 or 1 to quantify the prevalence of malaria._
+
+
+# 2.
+
+_Create a model that tests whether pox prevalence depends on elevation, and
+whether it differs between species, and whether species differences depend on
+elevation._
+
+
+plot(ggefect(mod.glm.all, terms= c(ʻSpecies,"Elev"))) + scale_color_colorblind()
+
+```{r}
+active_pox <- raw_pox %>%
+  filter(Activepox !="2")
+
+poxmod1 <- glm(Activepox ~ Elev*Species, data = active_pox, family = binomial)
+
+summary(poxmod1)
+Anova(poxmod1)
+resid_panel(poxmod1,plots = "resid", smoother = TRUE)
+plot(ggpredict(poxmod1, add.data = TRUE, jitter = 0.05))
+```
+
+_Evaluate the model results using the general methods we use in this
+course. Provide a verbal explanation of what the model tells us._ 
+
+The coefficient intercept here is Apapane at low elevation.
+
+This model tells us that the odds of a bird (regardless of type) being positive with an active case of avian pox at high elevation is about 4 log-odds lower than a bird at low elevation, with a p value of 4.13x10^5. 
+
+When it comes to species, Amakihi has about 2 log-odds lower chance of testing positive than Apanane, though that effect is only slightly significant at 0.013. 
+
+It is 5 log-odds less likely for white-eye to have active pox than Apapane, with p = 0.0001. Iʻiwi is 1 more log-odds more likely to be active with avian pox than apapane. In order of species most to least likely to have avian pox: Iʻiwi, Apanane, Amakihi, then White Eye. 
+
+When it comes to interactions, it looks like amakihi is about 3 log-odds _more_ likely to have pox at a higher elevation than amakihi at lower elevation and, I guess implicitly, apapane at low elevation (am I butchering this?), with a p value of 0.001. This means elevation makes a difference between species infection.  White eye is about 4 log-odds more likely to have avian pox at a high elevation than it is compared to those at a lower elevation? This makes me think maybe I have screwed this up, but also, maybe this means that, of the white eyes that make it to high elevation, those birds have a higher chance of having avian pox. That sort of makes sense after looking at the summary prevalence for pox above that I added. (0.003 for white eye at high elevation, .002 at low elevation)
+
+When looking at the likelihood test, it looks like both elevation, species, and the interaction between the two are significant predictors. 
+
+I plotted deviance residuals to predicted values in order to check diagnostics for this model. The smoothed line, er, kind of doesnʻt have a pattern since it looks like it curves slightly at the beginning and end of the x axis? I donʻt know if there is technically a "pattern" looking at the last six datapoints though (3 negative residuals, 3 positive residuals)
+
+The effects plots I tried kind of look like trash, but I wanted to put them in anyway. They do say what I think the main effects estimates are saying. 
+
+
+
+_If you look at summary() of the model there is an NA for one of the coefficients. Why do you think this is?_
+
+I think itʻs because there is no data for Iʻiwi at low elevations, so thereʻs no comparison estimate. I am not sure, though, why mid elevation has an estimate then. Maybe that can compare to high elevation, but then high elevation has nothing to compare? I guess Iʻm assuming the mid elevation data drops out of the estimates by the time you get to the high elevation interaction. 
+
+
+# 3.
+_Create a subset of the data that only includes birds with known malaria status (0 or 1). Also, you’ll probably want to exclude ʻIʻiwi (look at your answer to #1 to see why)._
+```{r}
+mod_pox <- raw_pox %>%
+  filter(Malaria != "2",
+         Activepox !="2",
+         Species != "IIWI")
+
+```
+
+ _Create a model that tests whether malaria status and elevation affect pox
+prevalence (and whether those effects differ between species)._
+
+
+
+
+```{r}
+poxmalmod <- glm(Activepox ~ Malaria*Species + Elev*Species, data = mod_pox, family = binomial)
+summary(poxmalmod)
+Anova(poxmalmod)
+resid_panel(poxmalmod,plots = "resid", smoother = TRUE)
+plot(ggpredict(poxmalmod, add.data = TRUE, jitter = 0.05))
+```
+
+
+_Evaluate the modelresults using the general methods we use in this course. Provide a verbal
+explanation of what the model tells us._
+
+I might have written the formula wrong. Maybe Malaria+Elev*Species is the same? Is Malaria*Elev*Species too much? I think I need to figure out how to translate words into formula more better-er. 
+
+Anyway, Iʻiwi and White Eye are out because there were to few Iʻiwi and there were no definite diagnoses for white eye for malaria. This means we just have Apapane and Amakihi. Apapane at low elevation without malaria is the intercept. It does look like malaria increases the log odds of pox by about 2 with a p value of <2x10^16. High elevation decreases the log odds by about 2.5 log odds, with a p value of 0.01. 
+
+As for species interactions, it looks like amakihi might be almost 1 log odds less prone to getting pox if it is positive with malaria than apanpane, with a p value of 0.00169. Pox also shows to be more likely in amakihi at higher elevations, showing an interaction between species and elevation. 
+
+The liklihood test shows that all the predictors plus the interactions tested are significant. 
+
+Residuals here again look similar to the active pox model, though I guess the red line has maybe less of a trend here, which could be a good sign. Itʻs not sigmoidal but it does look like all my hairs that  fall out when I touch my head. They fall out because I will be bald at 38 (thatʻs very soon). 
+
+The effects plots show that pox probability does go up with malaria, and that lower elevation birds and apapane are the most at risk in the data we examined. 
+
+
+
+
+
+

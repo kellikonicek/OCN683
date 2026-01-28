@@ -1,0 +1,246 @@
+---
+title: "konicek_homework_9"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+# Libraries 
+```{r}
+library(here)
+library(tidyverse)
+library(ggeffects)
+#install.packages('nlstools')
+library(nlstools)
+library(MuMIn)
+```
+
+
+## Upload Data
+```{r}
+raw_dino <- read_csv(here("week_9", "data","psittacosaurus.csv"))
+```
+```{r}
+plot(Mass~Age, data=raw_dino)
+```
+
+
+
+_Fit these three curves to the dataset ‘psittacosaurus.csv’, using nls() as described in lecture. You’ll need to supply start values for the parameters, which may be tricky. If you get error messages when trying to fit the model, use trial-and-error, or try plotting what the curve looks like with different parameter values to come up with reasonable guesses._
+
+_For each model report the coefficient estimates and confidence intervals, and plot the fitted curves on top of the raw data._
+
+1. Linear model:
+```{r}
+#model
+m.linear = nls(Mass ~ a+b*Age, data = raw_dino, start = list(a =1,b=3))
+
+#coefficient estimates and confidence intervals
+summary(m.linear)
+
+#plot 
+plot(ggpredict(m.linear,terms = "Age", add.data=TRUE))
+plotfit(m.linear,smooth=TRUE) #from the nlstools vignette- I am struggling with adding my curve to the raw data with base r. The way I am doing it does not seem to have any response to add.data=TRUE like it looks like it should
+```
+
+2. Exponential model: 
+```{r}
+#model
+m.exponent = nls(Mass ~ a*exp(r*Age), data = raw_dino, start = list(a = 1, r = 1/28))
+
+#coefficient estimates and confidence intervals
+summary(m.exponent)
+
+#plot
+plot(ggpredict(m.exponent,terms = "Age", add.data=TRUE))
+plotfit(m.exponent,smooth=TRUE)
+```
+
+3. Logistic model: 
+```{r}
+#model
+m.logistic<- nls(Mass ~ Mmax / (1 + exp(-r * (Age - Age0))), data= raw_dino, start = list(Mmax = max(raw_dino$Mass) , r = 1, Age0 = mean(raw_dino$Age)))
+
+
+#coefficient estimates and confidence intervals
+summary(m.logistic)
+
+#plot
+plot(ggpredict(m.logistic, terms = 'Age',add.data = TRUE))
+plotfit(m.logistic,smooth=TRUE)
+```
+
+Hey! I made the slopes a little different. Hooray. 
+
+
+
+
+
+_Compare the three models using AICc._
+```{r}
+all = list(m.linear,m.exponent,m.logistic)
+aic.table = model.sel(all)
+aic.table
+```
+
+
+
+_Which model is the best?_
+
+Well based on my aic.table it looks like the third, logistic model could be the best by far
+
+
+_What are the ΔAICc values and the Akaike weights for the three models?_
+
+#### Delta AICc: 
+
+Linear: 134.81
+
+Exponential: 59.44
+
+Logistic: 0
+
+#### Akaike weights: 
+
+Linear:0
+
+Exponential:0
+
+Logistic: 1
+
+_How do you interpret these results in terms of the relative support for the three models?_
+
+It looks like logistic has the only chance of these three models to be the most appropriate, given it's weight is 1 and the other two are 0. The delta AICc between the logistic and the next most reasonable is almost 60 units, which is a lot. So I think the logistic model has overwhelming support here. 
+
+_What is the estimated exponential growth rate (r) for the exponential and logistic models?_
+
+For exponential, r is around ^.33kg/year (right?)
+For logistic, r is around ^.5kg/year
+
+
+_What is the confidence interval on this parameter for the two models?_
+```{r}
+confint(m.exponent)
+confint(m.logistic)
+```
+
+so for exponent, the interval is .31-.34
+for logistic, the interval is .46-.56. That's a much larger CI than the exponential model! 
+
+
+_For exponential growth, the doubling time is log(2)/r. How long does it take the dinosaur to double in size, based on the two models?_
+```{r}
+log(2)/.33
+log(2)/.51
+```
+
+
+
+_Is there evidence that this dinosaur has a maximum size? If so, what is the estimate for that size, and what is the confidence interval around that estimate?_
+
+logistic model guesses the max size is 43 kg, and the confidence intervals around that are between 37-51 kg. 
+
+
+_How does the estimated maximum size compare to the largest size in the data?_
+
+ALL of those estimated sizes are larger compared to the wee ~30 kg of the max size.
+
+
+_How much stock do you put in the Mmax estimate, given the data we have?_
+
+I have no flippin' idea how long this dino guy lives. Since my sigmoidal curve doesn't asymptote in my observed data, it... I guess, in reality, there could be a really shallow slope on the asymptote? Or maybe the variation in size for these guys means you could potentially have some big guys hanging around? Anyway, I think since I have so little data really I would not hang my hat on this Mmax estimate. 
+
+
+_If this estimate of Mmax is true, about how big does this dinosaur get, relative to a human?_
+
+If I am doing this right, it looks like I probably couldn't eat a whole one immediately. It is a little smaller than someone who is around 150 lbs or 68 kg. I could probably eat it in like a week if I ate nothing but dinosaur for every meal. I could do it 
+
+_Now compare the three models using leave-one-out cross-validation._
+
+linear
+```{r}
+#vector to save the prediction errors
+errors = vector()
+#the loop: N for total number of observations
+for (i in 1:nrow(raw_dino)) {
+#make a y-vector that removes observation i from the original y-vector
+yuse = raw_dino$Mass[-i]
+#make a x-vector that removes observation i from the original x-vector
+xuse = raw_dino$Age[-i]
+#make a data frame with the new y and x vectors
+datause = data.frame(xuse, yuse)
+#fit the linear model
+mod <- nls(yuse ~ a+b*xuse, data = datause, start = list(a =1,b=3))
+#calculate the prediction error for the withheld observation
+errors[i] = raw_dino$Mass[i] - predict(mod, newdata = data.frame(xuse = raw_dino$Age[i]))
+}
+#calculate the root mean squared prediction error
+sqrt(mean(errors^2))
+```
+
+
+exponent
+```{r}
+#vector to save the prediction errors
+errors = vector()
+#the loop: N for total number of observations
+for (i in 1:nrow(raw_dino)) {
+#make a y-vector that removes observation i from the original y-vector
+yuse = raw_dino$Mass[-i]
+#make a x-vector that removes observation i from the original x-vector
+xuse = raw_dino$Age[-i]
+#make a data frame with the new y and x vectors
+datause = data.frame(xuse, yuse)
+#fit the exponential model
+mod <- nls(yuse ~ a*exp(r*xuse), data = datause, start = list(a = 1, r = 1/28))
+#calculate the prediction error for the withheld observation
+errors[i] = raw_dino$Mass[i] - predict(mod, newdata = data.frame(xuse = raw_dino$Age[i]))
+}
+#calculate the root mean squared prediction error
+sqrt(mean(errors^2))
+```
+
+
+
+logistic
+```{r}
+#vector to save the prediction errors
+errors = vector()
+#the loop: N for total number of observations
+for (i in 1:nrow(raw_dino)) {
+#make a y-vector that removes observation i from the original y-vector
+yuse = raw_dino$Mass[-i]
+#make a x-vector that removes observation i from the original x-vector
+xuse = raw_dino$Age[-i]
+#make a data frame with the new y and x vectors
+datause = data.frame(xuse, yuse)
+#fit the logistic model
+mod <- nls(yuse ~ Mmax / (1 + exp(-r * (xuse - Age0))), data= datause, start = list(Mmax = max(yuse) , r = 1, Age0 = mean(xuse)))
+#calculate the prediction error for the withheld observation
+errors[i] = raw_dino$Mass[i] - predict(mod, newdata = data.frame(xuse = raw_dino$Age[i]))
+}
+#calculate the root mean squared prediction error
+sqrt(mean(errors^2))
+```
+
+
+
+_Which model is the best at predicting the data, in terms of LOOCV?_
+
+We are looking for the lowest L00CV RMSE, so that will still be the logistic model at 1.3 (compare to linear at 2.6 and exponential at 2.2)
+
+
+_What is the typical difference between the predicted values and the observed values for the best model?_
+
+the typical difference is about 1.3 between predicted and observed values. 
+
+
+_Does cross-validation yield the same ranking of models as AICc?_
+
+It did yes. 

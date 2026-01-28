@@ -1,0 +1,474 @@
+---
+title: "konicek_homework_13"
+author: "Kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message=FALSE)
+```
+
+## Libraries 
+```{r}
+library(arm)
+library(car)
+library(here)
+library(tidyverse)
+library(ggeffects)
+library(MuMIn)
+library(GGally)
+library(glmmTMB)
+library(gridExtra)
+library(lme4)
+library(lmerTest)
+library(sjPlot)
+#install.packages("RVAideMemoire")
+library(RVAideMemoire)
+library(DHARMa)
+```
+
+## Data
+```{r}
+ohia_raw <- read_csv(here("week_13", "data", "ohia_merged.csv"))
+```
+
+
+
+
+Barton et al. (2020) investigated local adaptation in
+drought tolerance across a broad rainfall gradient on Oahu.
+
+The researchers focused on the response of seedlings to drought in field and greenhouse experiments, using seeds
+collected from 27 field sites varying greatly in average rainfall (circles on the plot above).
+
+We will focus on data from the greenhouse experiment.
+
+Seedlings were planted in germination trays and watered normally for four weeks. After four weeks seedlings were placed into one of two
+treatments: a control treatment with normal daily watering, or a ‘press drought’ treatment in which
+seedlings were watered every other day, to 80% capacity. 
+
+After six weeks of the press drought half of the seedlings (randomly chosen at the start of the experiment) were harvested for phenotypic
+measurements (if they survived), while the remaining seedlings (from both treatments) were placed into terminal drought (no more watering).
+The attached file contains data on each seedling in the experiment. The column definitions are as follows:
+
+ID Seedling experimental identification number.
+
+BLOCK Experimental block, due to variation in germination timing.
+POPULATION Source of seeds, collected on Oahu Island.
+
+DROUGHT Experimental water treatment: control (watered every other day to 100% field capacity) and drought (watered every other day to 80% field capacity).
+
+FATE Harvested after press drought treatment, or subjected to terminal drought with no water until the seedling died.
+
+DEAD Binary mortality (1 = dead; 0 = alive).
+
+HEIGHT Seedling height at harvest (cm).
+SHOOT Dry shoot biomass at harvest (g).
+ROOT Dry root biomass at harvest (g).
+
+LONGEVITY Number of days in terminal drought with no water before dying.
+
+TERMINAL_GWC Soil gravimetric water content (% field capacity) at the time of mortality in terminal drought.
+
+MAR 
+Historical mean annual rainfall at the site from which the seeds were collected (cm)
+
+MET
+Historical mean annual evapotranspiration at the site from which the seeds were collected (mm)
+
+
+
+# 1.
+## Height 
+
+_Using the seedlings that were harvested after the press drought treatment, analyze how seedling height varies among treatments and populations._
+
+Take a peek at the spread of the data: 
+```{r}
+ohia_h<- ohia_raw %>%
+  mutate(htsqrt = sqrt(Height))
+
+ohia_h$Drought<-as.factor(ohia_h$Drought)
+
+height <- ggplot(ohia_h, aes(x=htsqrt))+
+  geom_histogram()+
+  facet_wrap(~Drought)
+height
+
+vary <- ggplot(ohia_h,aes(x=Population, y= htsqrt, color=Drought))+geom_point()
+vary
+```
+So we want to use a glmm for this set because we will have nested variables and the response distribution is pretty normal. Also, maybe I should remove Palikea and Waimano, I dunno I guess not since I use them for mortality stuff. 
+
+
+_set up models to test:_
+
+
+_whether populations differ in height_
+```{r}
+ohia.h.pop = lmer(htsqrt ~ Population+(1|Block), data=ohia_h)
+summary(ohia.h.pop)
+plot_model(ohia.h.pop, type = "eff", terms="Population")
+plot_model(ohia.h.pop, type = "diag")
+```
+No, it does not look like populations differ in height. 
+
+
+_whether the press drought treatment affects height_
+```{r}
+ohia.h.dr = lmer(htsqrt ~ Drought+(1|Block/Population), data=ohia_h)
+summary(ohia.h.dr)
+plot_model(ohia.h.dr, type = "eff", terms=c("Drought"))
+```
+
+It looks like the drought treatments didnʻt affect height. 
+
+
+
+_whether populations differ in how press drought affects height._
+
+OK. I am confused because you mentioned that we should be using fixed:random interactions, but I am having a hard time deciding which wording is implying that would be appropriate.
+
+
+```{r}
+ohia.h.int= lmer(htsqrt ~ Drought*Population + (1|Block), data=ohia_h) #Okay this means WHICH POPULATIONS DIFFER? 
+
+ohia.h.rnd= lmer(htsqrt ~ Drought + (Drought|Population) + (1|Block), data=ohia_h) #This means DO populations differ AT ALL in their response to drought? 
+summary(ohia.h.int)
+summary(ohia.h.rnd)
+plot_model(ohia.h.int, type = "pred", terms=c("Population","Drought"))
+plot_model(ohia.h.rnd, type = "pred", terms=c("Population","Drought"))
+
+```
+
+Just for Waahila2 there seems to be a decent difference (drought height is lower than control by a sqrt factor of 1.17), both with the added fixed effect as well as the interaction. It also looks like the interaction model is not as good as a model where it is only adding fixed effects. But also, thereʻs only, like two data points for Palikea and one for Waimano so I am not sure Iʻm doing this real great. I tried a fixed:random model to see if drought affected height at all by Population, but it doesnʻt look like it. 
+
+
+
+
+### height vs. MAR raw data:
+
+
+_Next, set up models to test whether historical rainfall at a site predicts the height of seedlings_ 
+
+```{r}
+ohia.mar= lmer(htsqrt ~ MAR + (1|Population) + (1|Block), data=ohia_h)
+summary(ohia.mar)
+plot_model(ohia.mar, type = "eff", terms=c("MAR"))
+
+```
+I... I guess not.
+
+
+
+
+_and whether historical rainfall at a site predicts the effect of press drought on height._
+```{r}
+ohia.mar.dr= lmer(htsqrt ~ MAR*Drought +(1|Population)+ (1|Block), data=ohia_h)
+summary(ohia.mar.dr)
+plot_model(ohia.mar.dr, type = "pred", terms=c("MAR","Drought"))
+```
+WELL.... I guess no. 
+
+
+
+### Height and MET 
+
+_set up models to test:_
+
+_whether historical evapotranspiration at a site predicts the height of seedlings_
+```{r}
+ohia.met= lmer(htsqrt ~ MET + (1|Population) + (1|Block), data=ohia_h)
+summary(ohia.met)
+plot_model(ohia.met, type = "pred", terms=c("MET"))
+```
+
+NNNNNOpe not significantly. 
+
+
+_whether historical evapotranspiration at a site predicts the effect of press drought on height_
+
+```{r}
+ohia.met.dr= lmer(htsqrt ~ MET + Drought + (Drought|Population)+ (1|Block), data=ohia_h)
+summary(ohia.met.dr)
+plot_model(ohia.met.dr, type = "pred", terms=c("MET","Drought"))
+```
+
+
+_Be sure to include Block in your models, and think about which terms in the model should be random effects, which should be fixed effects, which should be fixed:random interactions, and which should be fixed:fixed interactions (you will need all four)._
+
+
+ 
+
+
+_Make appropriate plots of model results and describe the magnitude of any apparent relationships._ 
+
+I added them up with the models.
+
+
+_How do you interpret the results?_
+Nothing... Nothing looks like it influences ohia height. Am I broken? Yes. 
+
+
+
+
+# 2.
+
+### Mortality
+
+_Using the seedlings that were fated to be harvested after the press drought treatment,analyze how survival during the press drought is affected by the various potential predictors._
+
+```{r}
+ohia_s<- ohia_raw %>%
+  filter(Fate=="harvest")
+
+ohia_s$Drought<-as.factor(ohia_s$Drought)
+
+height <- ggplot(ohia_s, aes(x=Dead))+
+  geom_histogram()+
+  facet_wrap(~Drought)
+height
+```
+
+1= DEAD, 0=ALIVE! 
+
+_set up models to test_
+
+_whether populations vary in probability of mortality (i.e., the response column DEAD)_
+```{r}
+ohia.s.pop = glmer(Dead ~ Population + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.pop)
+plot(ggeffect(ohia.s.pop, terms = c('Population')))
+```
+There's variation by site at Manana 2, but not anywhere else significantly. It looks like block explains a lot of variation. 
+
+
+_whether the press drought treatment affects mean mortality_
+```{r}
+ohia.s.dr = glmer(Dead ~ Drought + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.dr)
+plot(ggeffect(ohia.s.dr, terms = c('Drought')))
+```
+hey here we go!
+
+```{r}
+exp(0.44)/(1 + exp(0.44))# probability control has of dying
+exp(1.4)/(1 + exp(1.4))  #probability drought has of dying
+exp(1.0067)
+```
+Control plots died 60% of the time
+drought died 80% of the time
+Okay so the trees in the drought group are 2.7 times more likely to die? 
+
+
+
+_whether populations vary in how mortality is affected by the press drought treatment._
+
+```{r}
+ohia.s.int= glmer(Dead ~ Drought + (Drought|Population) + (1|Block), data = ohia_s, family = binomial)
+
+summary(ohia.s.int)
+
+plot_model(ohia.s.int, type= "pred", terms = c('Population','Drought'))
+
+
+
+
+```
+
+```{r}
+exp(1.47)
+```
+
+
+It looks like the drought treatments are 4 times more likely to die than the control treatments when accounting for population and block, and when you vary the slope of drought by the population. 
+The random effects show thereʻs pretty substantial variation explained by the Population:Block interaction (.53 log-odds?), as well as the press drought treatment(0.44 log odds). So, thereʻs some variation between the blocks in the populations which makes sense, but there isnʻt a lot of variation between populations in the control groups (.03 log odds). There is, however, a lot of variation that can be explained by the drought treatment. 
+
+
+
+_set up models to test_ 
+
+_whether historical rainfall at a site predicts mortality_
+
+
+```{r}
+ohia_s$MAR_scaled <- scale(ohia_s$MAR)
+ohia.s.mar= glmer(Dead ~ MAR_scaled + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.mar)
+plot_model(ohia.s.mar, type= "pred", terms = c('MAR_scaled'))
+```
+
+Okay. It looks like 1) Block alone explains a large portion of the variation in this model, 2) MAR has a positive effect on the baseline (.54 log odds), which means that higher rainfall means youʻre more likely to die? Yeah I guess so.
+
+
+_whether historical rainfall at a site predicts the effect of press drought on mortality._
+
+```{r}
+ohia.s.mar.int= glmer(Dead ~ MAR_scaled*Drought + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.mar.int)
+plot_model(ohia.s.mar.int, type= "pred", terms = c('MAR_scaled','Drought'))
+```
+Well, I don't know if I did this one right-- it looks like you can predict the drought mortality of a site based on the MAR? higher MAR is .44 log-odds more likely to cause mortality, but drought is 1.02 log odds more likely to cause mortality no matter the interaction. Seems... I don't know. Seems like more historical rainfall, if it means more mortality on its own, would be kind of ramped up if drought is introduced. But I guess this is saying that drought death has similar log odds regardless of MAR? 
+
+_Finally, set up models to test:_
+
+
+_whether historical evapotranspiration at a site predicts mortality_
+
+```{r}
+ohia_s$MET_scaled <- scale(ohia_s$MET)
+ohia.s.met= glmer(Dead ~ MET_scaled + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.met)
+plot_model(ohia.s.met, type= "pred", terms = c('MET_scaled'))
+```
+yup, it looks like increased  MET_scaled is .34 log-odds more likely to cause mortality than average MET. 
+
+
+_whether historical evapotranspiration at a site predicts the effect of press drought on mortality._
+
+```{r}
+ohia.s.met.int= glmer(Dead ~ MET_scaled*Drought + (1|Block), data = ohia_s, family = binomial)
+summary(ohia.s.met.int)
+plot_model(ohia.s.met.int, type= "pred", terms = c('MET_scaled','Drought'))
+```
+Hey well lookie there. It looks like there might be a slight interaction between MET and Drought. That makes sense! That makes SENSE! So plants that are already in high MET areas might have an increased response to drought, but drought is still bad across the board. 
+
+
+
+_Be sure to think about what the appropriate probability distribution is for the response variable._
+This would be a bionimal distribution, and it's the log-odds of dying.
+
+
+_How do you interpret the results?_
+Phhht. PHHHHT. I think drought bad. However, it looks like it's not that bad when it comes to height, but it's bad for mortality. Higher annual rainfall means that plants are more likely to die (maybe because it's wet and things are rotting faster? I dunno), but drought does not make them -more- likely to die than plants with lower MAR. Plants with higher MET however may be slightly more vulnerable to drought. I feel like this was not in the paper and I have done something egregious. 
+
+# 3.
+
+_Using the seedlings that were fated for the terminal drought experiment (i.e., the seedlings that were not harvested), analyze how longevity during terminal drought is affected by the various potential predictors._
+```{r}
+ohia_t <- ohia_raw %>%
+  filter(Fate=="terminaldrought")
+
+ohia_t$MAR_scaled <- scale(ohia_t$MAR)
+ohia_t$MET_scaled <- scale(ohia_t$MET)
+
+longie <- ggplot(ohia_t, aes(x=Longevity))+
+  geom_histogram()
+longie
+```
+
+This... looks overdispersed. It also might count as count data since it's days in integers
+
+_Specifically, set up models to test:_
+
+This is all to try to pick a good distribution so I can avoid overdispersion: 
+
+```{r}
+ohia.t.pop <- glmer(Longevity ~ Population + (1|Block), family = poisson, data = ohia_t)
+overdisp.glmer(ohia.t.pop) #Sucks
+ohia.t.id <- glmer(Longevity ~ Population + (1|Block)+(1|ID), family = poisson, data = ohia_t)
+overdisp.glmer(ohia.t.id) # Convergence problem!
+ohia.t.nb.pop = glmer.nb(Longevity ~ Population + (1|Block), data = ohia_t)
+overdisp.glmer(ohia.t.nb.pop) #No convergence problem, overdispersion is at 1.2
+```
+
+_whether populations vary in longevity,_
+
+```{r}
+ohia.t.nb.pop = glmer.nb(Longevity ~ Population + (1|Block), data = ohia_t)
+
+summary(ohia.t.nb.pop)
+
+# DHARMa
+res <- simulateResiduals(fittedModel = ohia.t.nb.pop)
+plot(res)
+#I do not understand why this QQ plot is mad at me since it looks pretty good.The residual v. predicted looks worse to me. 
+
+plot_model(ohia.t.nb.pop, type = "pred", terms=c("Population"))
+```
+Even though I'm getting a warning that Block has really low variance, I'm going to keep it anyway since it's part of the experimental design. Some populations do vary in longevity, though the majority live between like 15-40 days. It looks like some populations (all the significant ones) last longer than the intercept, which is good for those there trees: 
+
+```{r}
+exp(fixef(ohia.t.nb.pop))
+```
+
+
+_whether the press drought treatment affects longevity,_
+```{r}
+ohia.t.nb.dr = glmer.nb(Longevity ~ Drought + (1|Block), data = ohia_t)
+summary(ohia.t.nb.dr)
+plot_model(ohia.t.nb.dr, type = "pred", terms=c("Drought"))
+```
+
+wowzers! Well, I guess drought doesn't impact longevity. So if you can (generally) survive the drought, you can keep going? 
+
+_whether populations vary in how longevity is affected by the press drought treatment._
+
+I'm worried my nested random effect model is overfitting now... uh, I guess i'll take it out here? I am being inconsistent. 
+
+```{r}
+ohia.t.nb.int = glmer.nb(Longevity ~ Drought +(Drought|Population)+ (1|Block), data = ohia_t)
+summary(ohia.t.nb.int)
+```
+
+ No, populations don't really vary in how longevity is impacted by drought. 
+ 
+ 
+_Next, set up models to test:_
+
+
+_whether historical rainfall at a site predicts longevity_
+
+```{r}
+
+ohia.mar.nb= glmer.nb(Longevity ~ MAR_scaled + (1|Population) + (1|Block), data = ohia_t)
+summary(ohia.mar.nb)
+plot_model(ohia.mar.nb, type = "pred", terms=c("MAR_scaled"))
+```
+OK...  So, some sites do have a predictive effect between rainfall and longevity, but not all... if you account for that, it looks like higher historical rainfall means trees are 79% more likely to have shorter longevity?
+
+```{r}
+exp(-0.232)
+```
+
+
+_whether historical rainfall at a site predicts the effect of press drought on longevity._
+```{r}
+ohia.mar.nb.dr = glmer.nb(Longevity ~ MAR_scaled *Drought+ (1|Population) + (1|Block), data = ohia_t)
+summary(ohia.mar.nb.dr)
+plot_model(ohia.mar.nb.dr, type = "pred", terms=c("MAR_scaled","Drought"))
+```
+
+Well God Bless America I guess MAR does not predict the effect of drought! Still we are getting a negative effect for MAR, but Drought and the interaction between MAR and drought is not significant. It is interesting to see the steeper slope for the control group though, which maybe suggests that drought effects aren't as bad in areas with higher rainfall. That would make sense. 
+
+
+
+_Finally, set up models to test:_
+
+_whether historical evapotranspiration at a site predicts longevity_
+```{r}
+ohia.met.nb.all= glmer.nb(Longevity ~ MET_scaled + Population + (1|Block), data = ohia_t)
+summary(ohia.met.nb.all) #just lookin' to see which sites
+ohia.met.nb= glmer.nb(Longevity ~ MET_scaled + (1|Population) + (1|Block), data = ohia_t)
+summary(ohia.met.nb)
+plot_model(ohia.met.nb, type = "pred", terms=c("MET_scaled"))
+```
+Yes, it looks like it does, but weakly. 
+
+_whether historical evapotranspiration at a site predicts the effect of press drought on longevity_
+```{r}
+ohia.met.nb.dr = glmer.nb(Longevity ~ MET_scaled *Drought+ (1|Population) + (1|Block), data = ohia_t)
+summary(ohia.met.nb.dr)
+plot_model(ohia.met.nb.dr, type = "pred", terms=c("MET_scaled","Drought"))
+```
+
+No. No?
+
+_How do you interpret the results?_
+
+Boy this is a real slog and painful to look at. AND late. Yikes. Someone said this homework was easy because it was a lot of copy and pasting different formulas, and I think I over-thought every single model and didn't overthink it in a good way.. Ugh. UGH!  
+
+
+Anyway, Populations vary in longevity, but the drought treatment did not effect their respective longevity. MAR and MET did vary by population, but didn't significantly predict the effects of drought.  MET did have an impact on the effects of drought when thinking about Mortality, though. So I guess trees that can hack drought can survive regardless of MAR or MET in an area, but trees are more likely to die in areas that have high MET. I think I am a slow learner and this is kind of a mess, but it's 7:30AM on Friday because in addition to being a mess it's LATE so hopefully I will learn the error of my ways in a few hours.

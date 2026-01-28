@@ -1,0 +1,220 @@
+---
+title: "konicek_homework_11"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning=FALSE)
+```
+
+## Libraries 
+```{r}
+library(arm)
+library(car)
+library(here)
+library(tidyverse)
+library(ggeffects)
+library(nlstools)
+library(MuMIn)
+library(GGally)
+library(glmmTMB)
+library(ggResidpanel)
+library(gridExtra)
+library(mgcv)
+library(sp)
+library(ggmap)
+library(lubridate)
+```
+
+## Data
+```{r}
+raw_counts <- read_csv(here("week_11", "data", "HOT_cyto_counts_edit.csv"))
+
+colnames(raw_counts)[colnames(raw_counts) == "date"] <- "Date"
+
+# Loop through each string
+for (i in 1:length(raw_counts$Date)) {
+  # Check if the string has exactly 5 digits
+  if (nchar(gsub("[^0-9]", "", raw_counts$Date[i])) == 5) {
+    raw_counts$Date[i] <- paste0("0", raw_counts$Date[i])
+  }
+}
+
+raw_counts$Date<-as.character(raw_counts$Date)
+raw_counts$Date<-mdy(raw_counts$Date)
+```
+
+
+```{r}
+raw_mlds <- read_csv(here("week_11", "data", "hot_mlds.csv"))
+```
+
+
+```{r}
+#clean data 
+clean <- raw_counts %>%
+  select(Date,press,chl,hbact,pro,picoeuk,crn=cruise)%>%
+  full_join(raw_mlds, by= join_by(crn))%>%
+  mutate(yd = yday(Date))
+```
+ 
+ 
+
+
+# 1. 
+
+
+```{r}
+ggpairs(clean, columns = c('pro','hbact', 'picoeuk', 'press', 'yd'), lower = list(continuous = wrap("points", alpha = 0.3, bg = 'blue', pch = 21)))
+
+hist(clean$pro)
+hist(clean$hbact)
+hist(sqrt(clean$picoeuk))
+
+```
+This looks overdispersed to me. I am going to try doing the Tweedy Distribution because I am curious about it for my own research and BY GOD I am going to shoehorn it into one of these homeworks I guess. 
+
+
+_For each of the three groups of microbes, fit a 2D smoother that characterizes how abundance changes with depth and with day of the year (i.e., from day 1 to day 365 or 366)._
+
+
+
+
+```{r}
+# GAM:
+prom = gam(pro ~ s(yd,press),family=tw(), data= clean)
+hbacm= gam(hbact ~ s(yd,press),family =tw(), data= clean)
+picm=gam(sqrt(picoeuk) ~ s(yd,press), data= clean)
+
+gam.check(prom)
+gam.check(hbacm)
+gam.check(picm)
+
+```
+
+ Simulate some Tweedie distribution data to see what the residuals look like: 
+```{r}
+set.seed(3)
+n<-400
+## Simulate data...
+dat <- gamSim(1,n=n,dist="poisson",scale=.2)
+dat$y <- rTweedie(exp(dat$f),p=1.3,phi=.5) ## Tweedie response
+
+## Fit a fixed p Tweedie, with wrong link ...
+b <- gam(y~s(x0)+s(x1)+s(x2)+s(x3),family=Tweedie(1.25,power(.1)),
+         data=dat)
+gam.check(b)
+             
+```
+
+
+
+_When fitting the 2D smoother for each type of microbe, consider how the response variable should be modeled (transformed or not, normal or non-normal)._
+
+Ugh, I have been stuck on this for a long time. Based on the best residuals I could get and what I know about distributions at this moment, I went with tweedie for Pro and Hbac and just a square root transform for Picoeuk. I think especially Pro and Picoeuk can be better fit, but I should finish this and maybe figure out what I am missing along the way. 
+
+
+_Consider whether the basis dimension needs to be increased beyond the default value._
+I don't think it does? All of the k' values are close to 1 and the p-values are high. They might be close to the edf though but I am not sure how much counts as "too close" 
+
+
+
+_Plot the fitted smoother in a way that is visually appealing._
+```{r}
+plot(prom, select = 1, lwd = 2, scheme = 2, rug = T, se = F, main = "Prochlorococcus concentration")
+plot(hbacm, select = 1, lwd = 2, scheme = 2, rug = T, se = F, main = "heterotrophic bacteria concentration")
+plot(picm, select = 1, lwd = 2, scheme = 2, rug = T, se = F, main = "photosynthetic picoeukaryote concentration")
+```
+
+
+_Finally, figure out how to test whether the relationship between abundance and depth changes over time or not._
+```{r}
+prom2 = gam(pro ~ s(yd)+ s(press) + s(yd, by= press),family=tw(), data= clean)
+summary(prom2)
+hbacm2= gam(hbact ~ s(yd)+s(press)+ s(yd, by= press),family =tw(), data= clean)
+summary(hbacm2)
+picm2=gam(sqrt(picoeuk) ~ s(yd) + s(press) + s(yd, by= press), data= clean)
+summary(picm2)
+
+```
+
+
+_What are your interpretations of the results so far?_
+It looks like there's definitely variation by depth by all three, where fewer guys like to hang out at deeper depths. I am more suspicious of whether they vary by time or not because changing k' pretty dramatically changed the way the plot was structured, at least. The summaries with the interaction between time and depth did look significant for all of them, although the picoeuk did not have a lot of the deviance explained by the model I made. 
+
+
+#2. 
+
+Now let’s compare the niches of the three groups to each other. 
+
+_Use a GAM including all groups simultaneously to simultaneously test three questions:_
+
+
+data:
+```{r}
+long <- clean %>%
+  pivot_longer(cols = hbact:picoeuk, 
+               names_to = "microbe", #new variables
+               values_to = "conc") #name values
+hist(long$conc)
+```
+
+
+
+_(a) Do the different kinds of microbes have different mean abundances?_
+_(b) Do the different kinds of microbes have different average depth distributions (i.e., averaging over time)?_
+_(c) Do the different kinds of microbes have different average seasonal dynamics (i.e., averaging over depths)?_
+
+GAM:
+```{r}
+groupm= gam(conc ~ microbe + s(yd)+s(press)+ s(yd,press), family=tw(), data= long)
+gam.check(groupm)
+summary(groupm)
+```
+
+
+
+_Now that you have fit models to test questions (a)-(c), make appropriate plots and perform appropriate hypothesis tests._
+```{r}
+plot(groupm, select=3, lwd = 2, scheme = 2, rug = T, se = F)
+```
+
+This sucks! I have not gotten the connection between this assignment and the class example enough to make this work yet. 
+
+_How do you intepret the results?_
+I whiffed these. I am not sure how to easily separate micrboes for plots and I bet I will feel dumb when we go over this homework. Er, it sure looks like everything is important but I know that p values get shrunk when you don't have k' at the right level! 
+
+
+
+# 3. 
+
+
+
+_Using only data from the top 45 meters, how does the concentration of each group of microbes vary with:_
+
+```{r}
+filter <- long%>%
+  filter(press<46)
+```
+
+_(a) mixed layer depth_
+_(b) Chl a concentration?_
+
+```{r}
+gm2= gam(conc ~ microbe + s(mean) + s(chl)+ s(mean,chl), family =tw(), data= filter)
+```
+
+
+_Test whether the three types of microbes exhibit different relationships with the two predictors. Use appropriate GAM(s), hypothesis tests, and smoother plots to assess these questions._
+```{r}
+plot(gm2, select=3, lwd = 2, scheme = 2, rug = T, se = F)
+plot(gm2, select = 1, residuals = T, shade.col = 'yellow', shade = T, col = 'black')
+plot(gm2, select = 2, residuals = T, shade.col = 'yellow', shade = T, col = 'black')
+summary(gm2)
+```
+
+WHIFFED IT. What did I even do here? Give me an F. 

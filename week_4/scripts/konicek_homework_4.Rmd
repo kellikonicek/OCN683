@@ -1,0 +1,273 @@
+---
+title: "konicek_homework_4"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+
+# Load Libraries
+```{r}
+library(tidyverse)
+library(here)
+library(ggeffects)
+library(GGally)
+library(effects)
+library(ggResidpanel)
+library(performance)
+library(car)
+library(arm)
+library(VGAM)
+library(MASS)
+```
+
+# Upload Data
+```{r}
+raw_copepod <- read_csv(here("week_4", "data","dam_acartia_survival_subset.csv"))
+raw_tang <- read_csv(here("week_4", "data","yellowtang.csv"))
+```
+
+# Copepod Data 
+The column ‘nx’ is the number of surviving copepods, out of 25, on day 14. We are going to investigate the distribution of this subset of the data.
+
+## 1)
+
+ _First plot a histogram of the data, using the discrete.histogram() function
+from the package ‘arm’. This function is better than standard histogram functions for our purposes, because the standard binning algorithms makes it hard to see what is happening at the ends of the distribution._
+
+```{r}
+#set up graphics
+binomial_plots <- function(x, n) {
+par(mfrow = c(1,2))
+  
+histogram <-discrete.histogram(x, main = 'Histogram',col = 'skyblue', xlab = 'Survivors', freq = FALSE, xlim = c(0,n))
+
+#plot the equivalent binomial distribution with the same mean survivorship
+survivors = 0:n
+probs = dbinom(survivors, size = n,mean(x/n))
+plot <-plot(probs ~ survivors, main = 'Distribution', col = 'blue', type = 'b', pch = 3, xlab = 'Survivors', las = 1)
+#pch is the shape of the points, las is label axis style I guess
+  return(list(histogram=histogram,plot=plot))
+}
+
+real_plots <- binomial_plots(raw_copepod$nx, 25)
+```
+
+
+## 2)
+
+ _Now calculate the mean and the variance of the number of survivors. This
+kind of data could potentially be modeled as a binomial distribution. Based on the formula for the binomial distribution (it is in the lecture notes, or on Wikipedia), what should the variance be, if the data were actually binomially distributed, given the mean number of survivors we observe?_
+
+Binomial has two parameters, n =number of trials, and p = probability of ‘success’. The mean of the distribution is n(p), the variance is n(p)(1-p)
+
+```{r}
+binomial_variance <- function(x, n) {
+ 
+  # Estimate the probability of success (p) from the proportion of survivors
+  p <- mean(x) / n
+  # Calculate the variance using the binomial variance formula: n * p * (1 - p)
+  variance <- n * p * (1 - p)
+  
+  return(variance)
+}
+
+binomial_mean <- function(x, n) {
+ 
+  # Estimate the probability of success (p) from the proportion of survivors
+  p <- mean(x) / n
+  mean_survivor_no <- p*n #find mean of survivors
+  
+  return(mean_survivor_no)
+         }
+cope_mean <- mean(raw_copepod$nx)
+cope_vary <- var(raw_copepod$nx)
+
+bi_vary <- binomial_variance(raw_copepod$nx, 25)
+bi_mean <- binomial_mean(raw_copepod$nx, 25)
+
+cope_mean
+cope_vary
+bi_mean
+bi_vary
+```
+When just done as a vector of numbers, the mean is 17.4 and the variance is 58.1. 
+When it's calculated using the binomial distribution the mean is 17.4, and the variance "should be" around 5.3. 
+
+
+## 3) 
+_Use the function rbinom() to simulate random draws from a binomial
+distribution that has the same probability of survival as the observed copepod data. Draw the same number of values as are present in the observed data. Calculate the mean and the variance of the number of survivors. Plot a histogram of your randomly drawn values.Now repeat this four more times – you will have a total five histograms as well as five means and variances. Describe how your simulated binomial data differs from the observed data. Can you imagine reasons why the two distributions might be different?_
+```{r}
+#simulate random draws using rbiom()
+
+par(mfrow = c(2,3))
+
+# Pre-allocate
+random_ <- vector("list",5)  # List to store random data for each iteration
+plot_ <- vector("list", 5)    # List to store plot outputs
+vary_ <- vector("list",5) 
+mean_ <- vector("list",5)# list to store variance results
+
+
+for(i in 1:5) {
+  p <- mean(raw_copepod$nx) / 25
+  # Generate random data
+  random_[i] <- list(rbinom(sum(raw_copepod$ni), 25, p))
+  
+  # Create the plot for the current random data
+  plot_[i] <- binomial_plots(random_[i][[1]], 25)
+  
+  # Calculate the mean and variance for the current random data
+  vary_[i] <- binomial_variance(random_[i][[1]], 25)
+  mean_[i] <- binomial_mean(random_[i][[1]], 25)
+}  
+
+vary_
+mean_
+
+
+```
+
+
+Our new AI God, Lord "The Chatman" GPT (that's what it told me we have to call it now) helped me some, I admit it-- but I am very happy I managed to figure out how to code for loops and functions a little better. 
+
+_Anyway_, I am excited to see that the mean and variance are similar between my five semi-random iterations and the observed data, but the actual histogram for the real data differs because it does not look so much like a bell curve. I think that might be due to the fact there is some underlying non-random variation in the data (like when comparing between generations or the pH treatment groups) that might skew the data to the right. 
+
+
+
+
+## 4)
+_Now load the package VGAM, which has functions for the beta-binomial distribution. This distribution is similar to the binomial, in that it models success/failure of a ‘trial’, but it allows the probability of success to vary across trials. This extra variability is controlled by the parameter ‘rho’. Use trial and error, with the function rbetabinom, to find a value of rho that creates a distribution that looks similar to the observed copepod data.Display the results of your trial and error simulations, and report what value of rho you think best corresponds to the observed data._
+
+rbetabinom(n, size, prob, rho = 0)
+
+```{r}
+ try1 <- rbetabinom(sum(raw_copepod$ni),25,(mean(raw_copepod$nx)/25),.01)
+discrete.hist(try1,main="try1 .01")
+try2 <- rbetabinom(sum(raw_copepod$ni),25,(mean(raw_copepod$nx)/25),.1)
+discrete.hist(try2,main="try2 .1")
+try3 <- rbetabinom(sum(raw_copepod$ni),25,(mean(raw_copepod$nx)/25),.5)
+discrete.hist(try3,main="try3 .5" )
+try4 <- rbetabinom(sum(raw_copepod$ni),25,(mean(raw_copepod$nx)/25),.33)
+discrete.hist(try4,main="try4 .33")
+```
+I settled between an rho of around 0.33, because it skews to the right and has around the same probability for the highest counts. Compared to my other trial and errors, at least, it ain't that bad. 
+
+
+# Tang Data
+
+## 5) 
+_Plot a histogram of the yellow tang counts._
+```{r real}
+#set up plot function
+poisson_plots <- function(x) {
+par(mar = c(4, 4, 10, 2))
+tang_mean<- mean(x) 
+histogram <-discrete.histogram(x, main = 'Histogram, Poisson (Red)', xlab = 'tang',cex.main = 1, cex.lab = 1,ylim=c(0,.25))
+# Add the theoretical Poisson distribution curve
+x_vals <- 0:max(x)  # x-range
+lines(x_vals, dpois(x_vals, tang_mean), col = 'red', lwd = 2)
+  return(histogram)
+}
+
+tangplots <- poisson_plots(raw_tang$count)
+```
+
+
+## 6) 
+_Calculate the mean and variance of the counts. Also calculate what the
+variance would be if the counts were poisson-distributed. How does it differ from the observed data? Why might that be?_
+```{r}
+#mean and variance of the counts-- 
+tang_mean<- mean(raw_tang$count)
+tang_var <- var(raw_tang$count)
+
+
+tang_mean
+tang_var
+
+
+#what is the variance if counts are poisson distributed?
+#mean = variance if it's poisson! 
+```
+The mean is 5.03, and the raw variance is 35.96. Since poisson are defined by lambda, which is the mean of events happening, lambda here for the Poisson distribution would be 5.03. Because the mean equals the variance for poisson distributions, the variance would also be 5.03. 
+
+
+## 7)
+
+_Simulate five sets of random draws from the poisson distribution with the
+appropriate mean and variance (using the function rpois()). Plot histograms of the results,and report the means and variances of the simulated data. Verbally compare these distributions to the observed distribution._
+
+```{r}
+#simulate random draws using rpois()
+
+# Pre-allocate
+random_pois <- vector("list",5)  # List to store random data for each iteration
+plot_pois <- vector("list", 5)    # List to store plot outputs
+mean_pois <- numeric(5)# list to store variance results
+
+
+for(i in 1:5) {
+  # Generate random data
+  random_pois[i] <- list(rpois(length(raw_tang$count),mean(raw_tang$count)))
+  
+  # Create the plot for the current random data
+  plot_pois[i] <- poisson_plots(random_pois[[i]])
+  
+  # Calculate the mean and variance for the current random data
+  mean_pois[i] <- mean(random_pois[[i]])
+}  
+mean_pois #mean is also the variance
+```
+OKAY! Whew. I think I did this for loop too. 
+
+The generated numbers are fitting the poisson curve really nicely, and have a much shorter tail than the original data. This probably suggests that the data are overdispersed! 
+
+## 8) 
+
+_Perform trial and error to find good-fitting parameter values from the negative binomial distribution, which can model counts with more variability than the
+poisson distribution. Use the function rnegbin() from the package ‘MASS’. The parameter ‘theta’ is the one you will want to manipulate to change the shape of the distribution (keep the value of the mean, mu, the same as the observed data). Hint: smaller values of theta lead to larger variances._
+
+```{r}
+#set up NEW plot function
+negbi_plots1 <- function(x) {
+  # Calculate mean and variance of the data
+  tang_mean <- mean(x) 
+  tang_var <- var(x)
+  par(mar = c(4, 4, 15, 2))
+  # Use the mean and variance to estimate the size and prob for the negative binomial
+  size <- tang_mean^2 / (tang_var - tang_mean)  # size parameter for negative binomial
+  prob <- tang_mean / (tang_var)  # prob parameter for negative binomial
+
+  # Capture the variable name for the x-axis label
+  xname <- deparse(substitute(x))
+  
+  # Create the histogram and plot the negative binomial distribution
+  histogram <- discrete.histogram(x, main = paste(xname, "Histogram"),ylim=c(0,.3))
+  
+  # Add the theoretical Negative Binomial distribution curve
+  x_vals <- 0:max(x)  # x-range
+  lines(x_vals, dnbinom(x_vals, size = size, prob = prob), col = 'red', lwd = 2)
+  
+  return(histogram)
+}
+tangtry_1 <- rnegbin(length(raw_tang$count),raw_tang$count,theta= .1)
+negbi_plots1(tangtry_1)
+tangtry_2 <- rnegbin(length(raw_tang$count),raw_tang$count,theta= 1)
+negbi_plots1(tangtry_2)
+tangtry_3 <- rnegbin(length(raw_tang$count),raw_tang$count,theta= 5)
+negbi_plots1(tangtry_3)
+tangtry_4 <- rnegbin(length(raw_tang$count),raw_tang$count,theta= 50)
+negbi_plots1(tangtry_4)
+tangtry_5 <- rnegbin(length(raw_tang$count),raw_tang$count,theta= 100)
+negbi_plots1(tangtry_5)
+```
+It starts looking about the same after theta= 50, so I will go with that as a good approximation. I tried it up to theta = 1000 and it didn't look any less varied, so there's probably an upper limit to how "nonvaried" this dataset can be? 
+

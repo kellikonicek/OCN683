@@ -1,0 +1,251 @@
+---
+title: "konicek_homework_10"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message=FALSE,
+                      warning=FALSE)
+```
+
+# Libraries 
+```{r}
+library(arm)
+library(car)
+library(here)
+library(tidyverse)
+library(ggeffects)
+#install.packages('nlstools')
+library(nlstools)
+library(MuMIn)
+library(GGally)
+library(glmmTMB)
+library(ggResidpanel)
+library(gridExtra)
+```
+
+
+## Upload Data
+```{r}
+raw_wai <- read_csv(here("week_10", "data","AlaWai_DiscreteBottle.csv"))%>%
+  select(SampleName,vvhA,Season,Site,SampleDepth,Rainfall_5Day,AirTemp,O2Conc,Salinity,WaterTemp,Turbidity,Chlorophyll,NOx,Silicate,POC,TotalP,"Tyrosine" = 'Tyrosine-like',HIX,"Humic" = 'VisibleHumic-like')%>%
+  drop_na()
+
+raw_wai$Site <- as.factor(raw_wai$Site)
+```
+
+
+
+# 1.
+
+_Start by analyzing general spatial and temporal patterns of V. vulnificus abundance. Plot how abundance varies between sites, seasons, and depths._
+```{r}
+#plot how abundance varies between site, season, sampledepth
+ggplot(raw_wai, aes(Site, vvhA,color=SampleDepth)) + geom_point() +
+facet_wrap(~Season)
+
+```
+OK these say to me that 1) the gene copy data is pretty varied by site, 2) It looks like gene copy tends to rise for sites during the dry season. 3) looks like it could be a lognormal distribution for the gene copies 
+
+
+_Construct an appropriate model that tests whether there are effects of these predictors, and interactions between them._
+```{r}
+ 
+logmod <- lm(log10(vvhA)~Site*SampleDepth*Season, data=raw_wai)
+Anova(logmod)
+```
+So it looks like Site, Sample Depth, and Season all have an effect. The only interaction that has an effect is the interaction between sites and the season. 
+
+
+_Figure out how the response variable (gene copies per mL) should be modeled (i.e., whether to transform or not, whether to use a non-normal distribution)._
+```{r}
+#look at distribution of data: looks like lognormal distribution to me? 
+hist(raw_wai$vvhA)
+hist(log(raw_wai$vvhA))
+resid_panel(logmod)
+
+```
+
+I also tried a gamma distribution, but I think the residuals for the lognormal distribution look a little better, particularly for the Q-Q plot. 
+
+
+_What are the magnitudes of the modeled effects?_
+```{r}
+plot(ggeffect(logmod, terms= c("Season","SampleDepth","Site")))
+summary(logmod)
+```
+
+_What are your interpretations of the results so far?_
+
+Weeeelll it looks like there might be more V. vulnificus when it is drier, but how much that varies has to do with the site. Sample Depth is maybe less important than site and season. It might be that increased salinity or a higher concentration of DOM from runoff encourages V.vulnificus when there is less water flowing into the system to diluate stuff. 
+
+# 2.
+
+
+_Use scatterplots of V. vulnificus concentration vs. the predictors to consider which should be transformed for use in a linear model / generalized linear model._
+
+Scatterplots without transforming: 
+
+```{r}
+
+
+# Get the names of the columns in the dataset (excluding 'vvhA')
+wai <- raw_wai %>%
+  select(vvhA,Rainfall_5Day, AirTemp, O2Conc, Salinity,WaterTemp, Turbidity, Chlorophyll, NOx, Silicate, POC, TotalP, Tyrosine, HIX,Humic)
+
+column_names <- setdiff(names(wai), "vvhA")
+
+# Loop over each column and create scatter plots
+for (col_name in column_names) {
+  # Create the scatter plot comparing vvhA to the current column
+  plot <- ggplot(wai, aes_string(x = col_name, y = "vvhA")) +
+    geom_point() +
+    geom_smooth()+
+    labs(x = col_name,
+         y = "vvhA")
+  
+plot
+}
+```
+
+Scatterplots with transforming: 
+
+```{r}
+par(mfrow = c(4,4), mar= c(3,3,2,1))
+for (col_name in column_names) {
+  # Create the scatter plot comparing vvhA to the current column
+  
+    wai$log_vvhA <- log10(wai$vvhA)  # Log-transform vvhA
+  wai$log_col <- log10(wai[[col_name]])  # Log-transform the current column
+ 
+  
+  plot2 <- ggplot(wai, aes_string(x = wai$log_col, y = wai$log_vvhA)) +
+    geom_point() +
+    geom_smooth()+
+    labs(x = col_name,
+         y = "vvhA")+
+    theme_light()
+  
+ plot2
+}
+```
+
+To transform: Maybe: NOx, Silicate,POC, and Humic? 
+
+
+_Start by making single-predictor models for each of the 14 predictors listed above._
+
+
+WaterTemp, Turbidity, Chlorophyll, NOx, Silicate, POC, TotalP, Tyrosine.like, HIX, and VisibleHumic.like.         
+
+```{r}
+logmod0 <-lm(log10(vvhA) ~ 1, data= wai)
+logmod1 <- lm(log10(vvhA) ~ Rainfall_5Day, data= wai)
+logmod2 <- lm(log10(vvhA) ~ AirTemp, data= wai)
+logmod3<- lm(log10(vvhA) ~ O2Conc, data= wai)
+logmod4<- lm(log10(vvhA) ~ Salinity, data= wai)
+logmod5<- lm(log10(vvhA) ~ WaterTemp, data= wai)
+logmod6<- lm(log10(vvhA) ~ Turbidity, data= wai)
+logmod7<- lm(log10(vvhA) ~ Chlorophyll, data= wai)
+logmod8<- lm(log10(vvhA) ~ log(NOx), data= wai)
+logmod9<- lm(log10(vvhA) ~ log(Silicate), data= wai)
+logmod10<- lm(log10(vvhA) ~ log(POC), data= wai)
+logmod11<- lm(log10(vvhA) ~ TotalP, data= wai)
+logmod12<- lm(log10(vvhA) ~ Tyrosine, data= wai)
+logmod13<- lm(log10(vvhA) ~ HIX, data= wai)
+logmod14<- lm(log10(vvhA) ~ log(Humic), data= wai)
+
+```
+
+
+
+_If you make an AIC table of the 14 models, what do the Akaike weights look like?_
+
+```{r}
+all <- list(logmod0,logmod1,logmod2,logmod3,logmod4,logmod5,logmod6,logmod7,logmod8,logmod9,logmod10,logmod11,logmod12,logmod13,logmod14)
+
+aic.table = model.sel(all)
+aic.table
+```
+
+_Which predictors, on their own, best explain V. vulnificus concentration?_ 
+
+It looks like silicate is da best babyeeeeee?
+
+```{r}
+sw(all)
+```
+
+_What does this mean?_ 
+
+OK. well, if I don't transform any of the predictors, humic DOC has the highest AICc. If I transform the predictors that look like they have a linear relationship after transforming, silicate has the lowest AICc and an AICc weight of 1. That essentially means that that model, on its own, is the best fitting by far out of all the options.
+
+
+_What is the downside of using only single-predictor models in this context?_
+Especially for this data, it's pretty likely that there are interactions between these predictors that might explain driving forces more than one predictor alone. For instance, both silicate and DOM might have some sort of interaction that explains why those two things are so important. Maybe they are both products of runoff, though I am not sure what the difference between what HIX is measureing and visible humic DOM is. 
+
+_Now make one big model that contains all 14 predictors._
+```{r}
+Bigmod <-lm(log10(vvhA) ~ Rainfall_5Day+AirTemp+O2Conc+Salinity+WaterTemp+Turbidity+Chlorophyll+log(NOx)+log(Silicate)+log(POC)+TotalP+Tyrosine+HIX+log(Humic), na.action = na.pass, data= wai)
+
+```
+
+
+_Do marginal null hypothesis tests on the predictors._
+```{r}
+Anova(Bigmod)
+
+grid.arrange(grobs = plot(ggeffect(Bigmod)))
+```
+
+_Which seem important for explaining V. vulnificus?_
+
+Kay well when all the predictors are combined, Humic DOM, Silicate, Rainfall and air/watertemperature seems important. Rainfall is going a different way than I thought it would, though, where the more rain falls the more V. vulnificus concentration goes up. LTR also shoes Tyrosine might be important, but it has an inverse relationship to V.vlnificus concentration
+
+_Collectively, how much variation in V. vulnificus concentration can be explained?_
+```{r}
+summary(Bigmod)
+```
+
+about 75% of the variation can be explained in this model, cuz we are looking at the R squared value. 
+
+_What is a potential downside of this approach to inference (i.e., one big model with marginal tests)?_
+
+A potential downside is that this many predictors can reduce the confidence for all the predictors, especially if there's not that many data points. Is it a tragedy of the commons maybe if the resource was confidence in the influence of a predictor. 
+
+_Now construct all possible models containing these 14 predictors (you can ignore interactions…and recall that there is an R function that automates this process)._
+```{r}
+options(max.print = 100)  # Only print the first 100 elements
+dredge <- dredge(Bigmod, extra = "R^2")
+model.sel(dredge)
+```
+
+_Which predictors consistently occur in the most-supported models?_ 
+
+Oh fun! Airtemp, Chlorophyll, Rainfall, HIX, Humic DOM, Silicate, Tyrosine, Watertemp.
+
+_What are the sums of Akaike weights for each predictor?_
+```{r}
+sw(dredge)
+```
+
+_Plot the fitted relationships from the best model._
+```{r}
+bestmod <- lm(log10(vvhA) ~ Rainfall_5Day+AirTemp+WaterTemp+Chlorophyll+log(Silicate)+Tyrosine+HIX+log(Humic), na.action = na.pass, data= wai)
+grid.arrange(grobs = plot(ggeffect(bestmod)))
+```
+
+
+_How do these results compare to the other approaches?_
+This is similar to the all predictor approach, except Chlorophyll is in here too! We got to see a predictor that had a little more impact once we took out some of the noise. That is so cool. 
+
+_Finally, attempt an interpretation of the results. What mechanisms could underlie the strong correlations identified by the analysis?_
+Based on the results, I first might guess that high temps cause higher concentration of vvhA. Because higher vvhA concentration seems to happen more often in the dry season, it is reasonable to assume that the hot water and hot air that is more common during those times is positively correlated-- this link matches with the data. I think the only thing I can't really explain is why higher rainfall means more vvhA, UNLESS it has to do with RUNOFF... especially if the rainy season didn't have much higher rainfall than the dry season. 
+
+I might also guess that runoff has a positive impact on vvhA concentration. This is because silicate and visible Humic are positively correlated with vvhA concentration, and those are typical runoff byproducts. I am not quite sure how HIX is measured based on my, like, five second google searh, so if the lower the HIX score the higher the visible humic, then I might be in business there. 
+
+Finally, I might guess that plants or algae in the water can keep vvhA concentration down. This is because chlorophyll and tyrosine are negatively correlated with vvhA, and I think you'd measure Tyrosine as an amino acid for plant stuff/plant products. 
+

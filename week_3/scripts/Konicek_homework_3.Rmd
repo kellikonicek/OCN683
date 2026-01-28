@@ -1,0 +1,158 @@
+---
+title: "Konicek_homework_3"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+## Libraries 
+```{r}
+library(here)
+library(tidyverse)
+library(car)
+library(ggResidpanel)
+library(ggeffects)
+library(effects)
+library(performance)
+```
+
+## Data
+```{r}
+raw <- read_csv(here("week_3", "data", "CRCP_Reef_Fish_Surveys_Hawaii_expanded_posted.csv"))
+```
+
+
+
+## 1) 
+
+_Identify the top twelve species in terms of these three statistics: (1) mean abundance, (2) maximum abundance, (3) standard deviation of abundance._
+
+```{r}
+#get all stats for all species
+abundances <- raw %>%
+  select(c(commonname,count))%>%
+  group_by(commonname)%>%
+  summarise(mean = (mean(count, na.rm = TRUE)),
+            max = (max(count, na.rm = TRUE)),
+            sd = (sd(count, na.rm=TRUE)))
+
+#Make tables with top twelve so it's easier to look at knitted 
+avg.abundance <- top_n(abundances, 12, mean)%>%
+  select(commonname, mean)%>%
+  arrange(desc(mean))
+max.abundance <- top_n(abundances, 12, max) %>%
+  select(commonname,max)%>%
+  arrange(desc(max)) 
+deviance <- top_n(abundances, 12, sd) %>%
+  select(commonname,sd)%>%
+  arrange(desc(sd))
+
+avg.abundance
+max.abundance
+deviance
+```
+
+
+
+## 2) 
+
+_Using the top twelve species based on mean abundance, plot a scatterplot of count vs. depth._
+
+
+
+_First way to make this plot, using for loops:_ 
+
+```{r twelve, fig.width= 8, fig.height= 11}
+toptwelve <- as.factor(avg.abundance$commonname)
+raw$commonname <-as.character(raw$commonname)
+
+par(mfrow = c(4,3), mar= c(3,3,2,1))
+
+for(i in 1:12) {
+species.data <- subset(raw, commonname == toptwelve[i])
+
+countsq <- sqrt(species.data$count)
+ymax = max((species.data$count))
+xmax = max(species.data$depth)
+
+with(species.data,scatter.smooth(depth, countsq, main = toptwelve[i]))
+# Add x-axis and y-axis labels only on the outermost plots
+  if (i == 11) {  # bottom-left panel
+    mtext("depth", side = 1, line = 2)  # add x-axis label (bottom panel)
+  }
+  if (i == 4) {  # top-left panel
+    mtext("count, sqrt transformed", side = 2, line = 2)  # add y-axis label (left panel)
+  }
+}
+```
+
+
+
+_Second, use ggplot() to do the same thing._ 
+
+```{r ggplot, fig.width= 8, fig.height= 11}
+toptwelveCh <- as.character(toptwelve)
+
+fishes <- raw %>%
+  filter(commonname %in% toptwelveCh)%>%
+  select(commonname, count, depth)
+
+fishes$commonname <- factor(fishes$commonname, levels = avg.abundance$commonname)
+
+ fishplot<- ggplot(fishes, aes(x= depth, y= sqrt(count)))+
+           geom_point()+
+           geom_smooth()+
+    facet_wrap(~commonname, ncol=3,scales = "free_y")
+fishplot
+```
+
+
+This one is a little messy re: code. 
+
+
+
+
+_What are your conclusions from this visual inspection of the data?_ 
+WELL. From this visual inspection, it looks like you can find a more of certain species in different depths of the water column. For instance, it seems they found less brown surgeon fish as the water got deeper, but more Hawaiian bicolor chromis and striated wrasse. It looks like there might be several different kinds of distributions. 
+
+## 3) 
+
+_Make a new plot that shows abundance vs. depth for the top 5 species, including smoothers, but this time put all of the species on the same  scatterplot and distinguish them with different colors._ 
+
+```{r}
+plot <- fishes %>%
+  filter(as.integer(commonname)<6)%>%
+  ggplot(aes(x=depth, y= sqrt(count), color= commonname))+
+                 geom_smooth()
+plot
+```
+
+_What is your interpretation of this plot?._
+
+Seems like these species have different depth niches because their distributions are different. With the scatterplot was too messy for me, but just the smoothed lines makes it seem that these species don't follow the same water column distribution. Yellow Tang and Brown surgeonfish might be similar, but I think I would hypothesize that the two chromis species and the spotted surgeonfish occupy different niches. 
+
+_Fit a linear model that tests whether these 5 species have different depth niches. Based on residual diagnostic plots of this model, and a plot of the fitted effects, do you think a linear model is a good approach for testing this question? If not, why not?_
+
+
+```{r}
+lmdata <- fishes %>%
+  filter(as.integer(commonname)<6)
+
+model <- lm(count ~ commonname+depth, data = lmdata)
+summary(model)
+#F stat
+Anova(model)
+resid_panel(model, plots = c('resid', 'qq', 'lev', 'hist'))
+check_model(model) #wanted to check with the dumb guy version of residual plots too 
+plot(ggeffect(model, terms = c('depth','commonname')))
+
+```
+
+
+Especially for the residual plot and the Q-Q plots, the residuals look pretty skewed. For that reason, and because at least two of these species don't even seem have a linear relationship to depth just based on looking at the raw data, I don't think a linear model works for these.

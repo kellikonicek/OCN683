@@ -1,0 +1,259 @@
+---
+title: "konicek_homework_12"
+author: "Kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message= FALSE)
+```
+
+
+## Libraries 
+```{r}
+library(arm)
+library(car)
+library(here)
+library(tidyverse)
+library(ggeffects)
+library(MuMIn)
+library(GGally)
+library(glmmTMB)
+library(gridExtra)
+library(lme4)
+library(lmerTest)
+library(sjPlot)
+```
+
+## Data
+```{r}
+raw_arch <- read_csv(here("week_12", "data", "cabral_arch_data.csv"))
+
+raw_isle <- read_csv(here("week_12", "data", "cabral_island_data.csv"))
+
+```
+
+
+
+_Make a model with species richness as the response, and with a random effect for Archipelago. Species richness could be modeled as discrete count data (e.g., a negative binomial distribution), but we’ll finish covering GLMMs later; for now you can use log(Richness+1) to get a pretty normal looking response._ 
+```{r}
+arch.random.model = lmer(log(Species+1)~(1|Archipelago),data=raw_isle, REML = FALSE)
+summary(arch.random.model)
+plot_model(arch.random.model, type = "diag")[[1]]
+
+```
+
+
+
+_What proportion of the variation in species richness occurs at the archipelago scale, and what proportion occurs within archipelagos?_
+
+```{r}
+ranova(arch.random.model)
+```
+
+
+
+
+_Which archipelagoes are particularly diverse, and which are depauperate?_
+
+```{r}
+plot_model(arch.random.model, type = "re")
+ranef(arch.random.model)
+```
+
+
+_Make some exploratory plots of the effect of each variable on richness, plotted at the appropriate scale._
+
+
+```{r}
+full <- merge(x = raw_isle, y = raw_arch, by = "Archipelago")%>%
+  select(-c(2 , 7))
+```
+
+
+```{r}
+grid.arrange(ggplot(full) + geom_point(aes(log(Area),log(Species+1))),#island
+ggplot(full) + geom_point(aes(log(Elev+1), log(Species+1))),#island
+ggplot(full) + geom_point(aes(Temp,log(Species+1))), #island
+ggplot(full) + geom_point(aes(number.islands, log(Species+1))),#arch
+ggplot(full) + geom_point(aes(log(distance), log(Species+1))),#arch
+ggplot(full) + geom_point(aes(age, log(Species+1))),nrow = 3) #arch
+```
+
+
+```{r}
+full$transspecies <- log(full$Species+1)
+full$transarea <- log(full$Area)
+full$transelev <- log(full$Elev+1)
+full$transdist <- log(full$distance)
+
+```
+
+
+
+```{r}
+ggpairs(full,columns = c("transspecies","transarea","transelev","Temp","number.islands","transdist","age"))
+```
+ 
+
+
+_Construct mixed model(s) that test the roles of the six predictors in explainingspecies richness._
+
+
+```{r}
+no.fixed= lmer(transspecies~(1|Archipelago), data=full, REML = FALSE,na.action = na.pass)
+
+no.interact = lmer(transspecies~(1|Archipelago)+transarea+transelev+Temp+transdist+age+number.islands, data=full, REML = FALSE,na.action = na.pass)
+
+age.elev=lmer(transspecies~(1|Archipelago)+transarea+age*transelev+Temp+transdist+number.islands, data=full, REML = FALSE,na.action = na.pass) #I'm thinking maybe age of the island determines how diverse the species are by elevation
+
+area.no.islands=lmer(transspecies~(1|Archipelago)+transarea*number.islands+age+transelev+Temp+transdist, data=full, REML = FALSE,na.action = na.pass)#I wanted to take number of islands out to see if that helps my power at all-- I don't really think it did the way I've done this, and I also think number of islands does have an effect on species diversity in an archipelago so it should be in the model somehow.
+
+
+double.interact=lmer(transspecies~(1|Archipelago)+number.islands*transarea+age*transelev+Temp+transdist, data=full, REML = FALSE,na.action = na.pass) 
+
+#OK after thinking about this and trying a lot of different models I did not add because they felt like scratch paper, I think the effect of island area depends on how many islands are in the archipelago, and I think the effect of elevation depends on the age of the island. 
+
+double.random=lmer(transspecies~(1|Archipelago)+(transelev|age)+(transarea|number.islands)+Temp+transdist, data=full, REML = FALSE,na.action = na.pass)
+
+summary(no.fixed)
+summary(no.interact)
+summary(age.elev)
+summary(area.no.islands)
+summary(double.interact)
+summary(double.random) #this looks like it sucks 
+
+```
+
+The double random doesn't look that good. The double interaction model does the best and makes the most sense to me I think, so I will go with this one. 
+
+
+_Plot fitted (fixed) effects as well as random effect estimates, plus model diagnostics._
+
+fitted
+```{r}
+fixef(double.interact)
+
+grid.arrange(plot_model(double.interact, type = "eff", terms = c('transarea')),
+plot_model(double.interact, type = "eff", terms = c('transelev')),
+plot_model(double.interact, type = "eff", terms = c('Temp')),
+plot_model(double.interact, type = "eff", terms = c('transdist')),
+plot_model(double.interact, type = "eff", terms = c('number.islands')),
+plot_model(double.interact, type = "eff", terms = c('age')),
+plot_model(double.interact, type = "eff", terms = c('transelev','age')),
+plot_model(double.interact, type = "eff", terms = c('transarea','number.islands')))
+```
+
+Random
+```{r}
+plot_model(double.interact, type = "re")
+```
+Diagnostics: Random
+```{r}
+plot_model(double.interact, type = "diag")[[2]]
+VarCorr(double.interact)
+```
+Diagnostics: Fixed
+```{r}
+plot_model(double.interact, type = "diag")[[1]]
+```
+
+
+
+_Calculate how much variation the predictors explain, at the two different scales in the data (island and archipelago)? I.e., present R2 values for the two scales._
+
+```{r}
+
+island =lmer(transspecies~(1|Archipelago)+transelev+transarea+Temp, data=full, REML = FALSE,na.action = na.pass)
+arch =lmer(transspecies~(1|Archipelago)+age+number.islands+transdist, data=full, REML = FALSE,na.action = na.pass)
+
+VarCorr(island)
+VarCorr(arch)
+1 - VarCorr(arch)$Archipelago[1]/VarCorr(island)$Archipelago[1]
+
+
+```
+
+
+
+_Also, how much of the total variation have they explained, according to R2 GLMM(m)?_
+
+```{r}
+r.squaredGLMM(island)
+r.squaredGLMM(arch)
+```
+
+
+
+Here's the ones for my actual model though, where I combined both scales?
+
+```{r}
+VarCorr(no.fixed)
+VarCorr(no.interact)
+VarCorr(double.interact)
+#it looks like the unexplained variation goes down as I add my fixed effects and interactions. 
+
+
+1 - VarCorr(no.interact)$Archipelago[1]/VarCorr(no.fixed)$Archipelago[1]
+
+r.squaredGLMM(double.interact)
+```
+
+
+
+
+_Use appropriate hypothesis tests (as described in lecture) to test the role of the different predictors._
+
+I would really think all of these predictors are important, so I don't really want to test them individually-- hopefully this works ok!
+```{r}
+anova(no.interact,age.elev)
+anova(no.interact,area.no.islands)
+anova(age.elev,double.interact)
+anova(no.interact,double.interact)
+anovaresults <- anova(double.interact, type=2)
+anovaresults
+```
+
+
+_How do you interpret the results of these tests, and the effects plots, in light of hypotheses for what controls species richness in islands and archipelagos?_
+Okay, it looks like all of these predictors are important, but some of them are important as a function of another predictor. Species richness goes up with increasing area, elevation, and temperature, and goes down with increasing distance from other land. At first glace, number of islands and age wasn't a direct factor. However, looking at interactions with area and elevation, respectively, shows that archipelagos with more islands have   newer islands have higher species richness at a given elevation than an older island at the same elevation. 
+
+
+
+_What are the denominator degrees of freedom for each predictor?_
+```{r}
+den_df <- anovaresults$DenDF
+den_df
+```
+
+
+
+_Do the denominator df make sense? Why or why not?_
+Most of them do! The island predictors like area, elevation, and the two interactions are close to the max number of island samples, 174. 
+
+number of islands and the distance from other land also looks... eh, okay? distance definitely does. That is because they are close to the Archipelago sample size, which is 23. 
+
+Temperature and age are a little wonky since they are not close to the island or archipeligo. I think Age could be because of partial pooling, maybe? They both might be because the same age number is assigned to multiple islands. Temperature is assigned by island, but the same numbers repeat a lot. That could be an issue? 
+
+_Is the model we’ve used the best model? Often I just stick with one big model when the ratio of data to parameters is pretty good. But one might prefer to find the best model(s), while accounting for model selection uncertainty._
+
+
+I think this is the best model I can come up with right -now-, but I don't know if that is saying much ya know 
+
+
+
+_Use AICc in some capacity to assess which predictors are important, what the ‘best’ model is, and how sure you are about what the best model is._
+
+
+
+Iʻd like to see if dredging comes up with the same thing I picked:
+```{r}
+full.dredge = dredge(double.interact, extra = "R^2")
+full.dredge
+```
+
+
+It looks like the "best" model looking at AICc when we use dredge() shows a model similar to the best one I picked-- I know this because the top AICc weight is ~.58, compared to the next-best model's ~.29. The AIC delta is also something to look at-- the 2nd best model without interactions is about delta 1.3 away, which isn't great, but it's something. After the second model, which doesn't incorporate island number at all, the delta is 3.41 which is high enough to at least entertan that it is inferior.

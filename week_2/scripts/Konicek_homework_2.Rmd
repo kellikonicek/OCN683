@@ -1,0 +1,230 @@
+---
+title: "Konicek_homework_2"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+### Libraries
+```{r}
+library(tidyverse)
+library(here)
+library(emmeans)
+library(ggeffects)
+library(GGally)
+library(effects)
+library(ggResidpanel)
+library(car)
+#install.packages('emmeans')
+```
+
+### Data
+```{r}
+raw <- read_csv(here("week_2", "data","leibold_mesocosm_data_subset.csv"))
+
+#turn blocks into a factor 
+raw$Block <- as.factor(raw$Block)
+raw$NutrientLevel <- as.factor(raw$NutrientLevel)
+raw$FoodWeb <- as.factor(raw$FoodWeb)
+```
+
+## 1) 
+_Create a linear model that tests whether richness is explained by nutrient level and/or food web
+treatment, and whether the effect of food web treatment differs between nutrient levels, while also accounting for the blocked structure of the experiment._
+
+if you have the same sampling effort in all your data, you could theoretically use raw counts 
+
+```{r}
+# Model 
+richness.lm <- lm(Phyto_Chao1 ~ NutrientLevel*FoodWeb + Block, data = raw)
+#Summary 
+summary(richness.lm)
+#Fstat
+Anova(richness.lm)
+resid_panel(richness.lm)
+#Effects Plot (?)
+plot(ggeffect(richness.lm, terms = c('NutrientLevel','FoodWeb', "Block")))
+plot(allEffects(richness.lm))
+```
+There are MAIN EFFECTS for foodweb and block
+if you make things into one global interaction test, it can be lost in the bigger picture of what's being tested. 
+
+Note to me: The higher the F stat relative to the DF, where numerator is the parameters and the demominator is the residuals, the stronger the predictors (Anova) or model (global F) explains the variation.
+
+## 2)
+_Why is it important to account for the blocks? Analyze the results of the linear model as we did in Homework 1. What is your interpretation of these results so far?_
+
+It's important to account for blocks because that can help to explain nonindependent and/or unexplained variation.
+
+Based on looking at the summary and the Anova F-stats for each parameter, it looks like phytoplankton diversity goes up when nutrient levels are lower, and when grazers are introduced to algae without the presence of predators. The residuals also look pretty good, I think, so a linear model is a good fit! 
+
+Okay, let's see if I understand how to interpret the F stats. The global F statistic in the lm summary is F 8,30 = 2.548, p= 0.03008, which means the model can explain variation. The partial F-stat from the Anova shows that the predictors Nutrient Level (F 1, 30 = 6.8341, p= 0.013853) and FoodWeb (F 2, 30 = 6.5985, p=0.004217) significantly explain the variance in the model. 
+
+The low F stats for the FoodWeb:Nutrient Level interaction means that the nutrient level doesn't necessarily effect the independent influence the food web has on phytoplankton diversity, or vice versa. 
+
+
+
+
+## 3) 
+_Use contrasts to test hypotheses:  
+whether the grazer treatment (G) has greater richness than the algae treatment (A)_
+
+
+KYLE: emmeans(mod, specs= ~ Nutrientlevel*Foodweb), method= list("H G - A")= c(-1,0,1,0,0,0), "L G - A" = c(0, -1,0,1,0,0)
+
+g.vs.a.across = contrast(emmeans(mod,specits= ~Nutlevel*Food), method= list("G-A"= c(-1,-1,1,1,0,0)))
+
+
+```{r}
+algae.graze.contrast <- emmeans(richness.lm, specs = trt.vs.ctrl ~ FoodWeb)
+algae.graze.contrast
+plot(algae.graze.contrast$contrasts)
+plot(algae.graze.contrast$emmeans)
+```
+It does! G - A = 6.47 emmeans, adj. p = 0.0033
+
+
+_whether the effect of grazers differs between high and low nutrient levels (we think the effect of grazers on coexistence may be greater at high nutrient loading)_
+
+```{r}
+nut.contrast <- (emmeans(richness.lm, specs = pairwise ~ NutrientLevel + FoodWeb,
+                        at    = list(FoodWeb = c("G"))))
+nut.contrast
+```
+HG - LG is a -3.1 difference with a non-adjusted p value of 0.2565. So Grazers don't differently effect phytoplankton diversity at H or L nutrient levels. 
+
+## 4)
+_Use emmeans to calculate the estimated marginal means of each combination of nutrient level and food web treatment_ 
+
+```{r}
+combo.contrast <- (emmeans(richness.lm, specs = pairwise ~ FoodWeb+NutrientLevel))
+combo.contrast
+```
+
+
+## 5)
+_Define contrasts to test:_ 
+
+
+_(1) Whether G is different from A in the H treatment:_
+```{r}
+H_emmeans <- emmeans(richness.lm,
+                        specs = pairwise  ~ FoodWeb|NutrientLevel, 
+                        at    = list(NutrientLevel = c("H"))) 
+H_emmeans
+```
+
+It is different, but the contrast isn't really significant. 
+ A - G      -6.110 2.65 30  -2.304  0.0707
+ 
+If we can judge these relative to each other, the difference between A and G is not as much as, say, G and P for the high treatments. That is not true for the Low, however. 
+
+_(2) Whether G is different from A in the L treatment: _
+```{r}
+L_emmeans <- emmeans(richness.lm,
+                        specs = pairwise ~ FoodWeb | NutrientLevel, 
+                        at    = list(NutrientLevel = c("L"))) 
+L_emmeans
+```
+
+A - G      -6.822 2.68 30  -2.543  0.0421
+
+A-G is different! 
+
+_(3) whether G is different from A when averaging the H and L treatments:_
+
+```{r}
+avg.emmeans <- pairs(emmeans(richness.lm,"FoodWeb"))
+avg.emmeans
+```
+
+I think I did this right, but I also don't know how to get "Block" out of the averages. Maybe that's ok though? Anyway, when averaging the Nutritent Levels in, G is different from A (A-G= -6.47, adj. p=  0.0047).  They are different. 
+
+
+_(4) Define an interaction contrast that tests whether the difference between G and A is itself different between H and L (is G-A for the high nutrient treatments greater or smaller than G-A for the low nutrient treatments?)_
+
+```{r}
+levels.contrast <- (emmeans(richness.lm,
+                            specs = pairwise ~ FoodWeb*NutrientLevel,
+                            at    = list(FoodWeb = c("G","A"))))
+levels.contrast
+plot(levels.contrast$contrasts)
+plot(levels.contrast$emmeans)
+```
+
+So we want GH - AH: 6.11, adj. p = 0.1198
+And we want GL- AL: 6.82 adj. p = 0.0734
+
+_How do you interpret these results?_
+So I think what I'm seein' is that, with low nutrients, grazers+algea do have an effect on phytoplankton diversity compared to Algae's effect on phytoplankton diversity alone. With high nutrients, however, grazers do NOT effect phytoplankton diversity any differently than algea alone does. 
+
+I don't know about phytoplankton ecology very much. Maybe algea outcompetes different phytoplanktons when there is too much nutrients and grazers can't compensate for that? But with low nutrients, grazers can make enough headway on algea to make room for phytoplankton?
+
+## 6)
+_Repeat the same set of 4 contrasts but ask whether the P treatment is different from the G treatment_
+
+NOTE: I feel like I've screwed something up here since these contrasts are more or less the same-- I am a little confused about how to make a custom contrast when I am dealing with more than two categories, i.e. the notes had a treatment customization but I am not sure how to deal with NutrientLevel and FoodWeb levels at the same time.
+
+P different from G at high: 
+```{r}
+H_emmeans.P <- emmeans(richness.lm,
+                        specs = pairwise  ~ FoodWeb|NutrientLevel, 
+                        at    = list(NutrientLevel = c("H"))) 
+H_emmeans.P
+```
+
+Kay, G and P are different in that P has less phytoplankton diversity than G, and there is a slightly significant difference between the two groups (adj. p= 0.05)
+
+
+
+
+P different from G at low: 
+```{r}
+L_emmeans.P <- emmeans(richness.lm,
+                        specs = pairwise  ~ FoodWeb|NutrientLevel, 
+                        at    = list(NutrientLevel = c("L"))) 
+L_emmeans.P
+```
+
+At low, there is not that much of a difference. 
+
+P different from G averaging out the nutrients: 
+```{r}
+avg.emmeans.P <- pairs(emmeans(richness.lm,"FoodWeb",
+                        at = list(FoodWeb= c("G","P"))))
+avg.emmeans.P
+```
+
+Okay averagng across the nutrient level and block, G and P have different phytoplankton diversity! Grazers have more. non-adj (?) p= 0.0510 
+
+
+Is the difference between P and G  different between H and L (is G-P for the high nutrient treatments greater or smaller than G-P for the low nutrient treatments?)
+
+```{r}
+levels.contrast.P <- (emmeans(richness.lm,
+                            specs = pairwise ~ FoodWeb*NutrientLevel,
+                            at    = list(FoodWeb = c("G","P"))))
+levels.contrast.P
+plot(levels.contrast.P$contrasts)
+plot(levels.contrast.P$emmeans)
+```
+
+G-P for High: 6.51 , adj. p value of 0.0945
+G-P for Low: 2.03, adj. p value of 0.9134
+I want to probably contrast these right? 
+
+
+
+_How do you interpret the results? _
+
+OKAY. Here's my shot. When averaging out nutrient levels, predators introduced to the system lower the phytoplankton diversity (probably by getting rid of them grazers). 
+
+Grazers influence phytoplankton diversity when nutrients are low. If a predator is there, there isn't a huge effect but grazers give more diversity (GL-PL 2.03, adj. p= 0.9). 
+
+When nutrients are high, predators can really stink up the diversity, probably by taking out grazers. I have a feeling I need another contrast interaction to show how _much_ they are stinking up the diversity. 

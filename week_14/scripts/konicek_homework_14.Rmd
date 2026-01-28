@@ -1,0 +1,468 @@
+---
+title: "konicek_homework_14"
+author: "Kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+Homework 14 – Small bacteria and ocean warming
+
+
+## Libraries 
+```{r}
+library(arm)
+library(janitor)
+library(car)
+library(here)
+library(tidyverse)
+library(ggeffects)
+library(MuMIn)
+library(GGally)
+library(gridExtra)
+library(lme4)
+library(lmerTest)
+library(sjPlot)
+library(RVAideMemoire)
+library(DHARMa)
+library(lubridate)
+#install.packages("forecast")
+library(forecast)
+library(nlme)
+```
+
+
+## Data
+```{r}
+cell_raw <- read_csv(here("week_14", "data", "bacteria_size_temperature_edit.csv"))
+
+LNA <- cell_raw %>%
+  select(year,month,season,date,'day of year','temp 5 m E2','LNA ab uml','LNA bv','LNA B','%LNA BB') %>%
+  drop_na()
+
+LNA$date <- dmy(LNA$date)
+LNA$season <- as.factor(LNA$season)
+LNA$month <- as.factor(LNA$month)
+LNA <- clean_names(LNA)
+```
+
+
+_‘LNA ab uml’ = LNA abundance in cells per mL, 
+‘LNA bv’ = LNA mean cell size in units of cubic microns,
+‘LNA B’ = LNA total biomass in units of µg C per L,
+‘%LNA BB’ = percent of total bacterial biomass in the LNA fraction. 
+
+Other important
+variables are 
+year
+month
+date
+day of year,
+‘temp 5 m E2’ = temperature at 5 meters depth._
+
+
+
+# 1.
+
+_Begin by exploring seasonal patterns () in LNA abundance (LNA ab uml), cell size (LNA bv), biomass (LNA B), and percent biomass (%LNA BB), as well as temperature (temp 5m E2). I.e., make exploratory plots of these variables that focus on seasonality._
+
+
+```{r}
+
+boxplot(lna_ab_uml ~ season, data = LNA, main = "LNA abundance", col = "lightgreen")
+stripchart(lna_ab_uml ~ season, data = LNA,
+           vertical = TRUE, method = "jitter",
+           pch = 16, col = rgb(0, 0, 0, 0.5), add = TRUE)
+boxplot(lna_bv ~ season, data = LNA, main = "LNA cell size", col = "lightblue")
+stripchart(lna_bv ~ season, data = LNA,
+           vertical = TRUE, method = "jitter",
+           pch = 16, col = rgb(0, 0, 0, 0.5), add = TRUE)
+
+boxplot(lna_b ~ season, data = LNA, main = "Biomass", col = "lightyellow")
+stripchart(lna_b ~ season, data = LNA,
+           vertical = TRUE, method = "jitter",
+           pch = 16, col = rgb(0, 0, 0, 0.5), add = TRUE)
+
+boxplot(percent_lna_bb ~ season, data = LNA, main = "% Biomass", col = "pink")
+stripchart(percent_lna_bb ~ season, data = LNA,
+           vertical = TRUE, method = "jitter",
+           pch = 16, col = rgb(0, 0, 0, 0.5), add = TRUE)
+
+boxplot(temp_5_m_e2 ~ season, data = LNA, main = "temperature at 5m depth", col = "gray")
+stripchart(temp_5_m_e2 ~ season, data = LNA,
+           vertical = TRUE, method = "jitter",
+           pch = 16, col = rgb(0, 0, 0, 0.5), add = TRUE)
+
+```
+
+
+
+
+_What have you learned so far?_
+
+LNA abundance might increase in the spring and summer 
+
+LNA cell size might increase in the winter and spring
+
+Biomass might increase in the summer 
+
+The spring might be a period of disruption because percent biomass is all over the place 
+
+temperature at 5m deep is fairly consistent with seasonality
+
+# 2.
+
+_Now make new exploratory plots of the same five variables, focusing on longer- term trends._
+
+
+```{r}
+plot(LNA$date, LNA$lna_ab_uml, type = "l",xaxt = "n",
+     main = "LNA abundance", xlab="",ylab="abund per ml")
+monthly_ticks <- seq(from = as.Date("2002-04-18"), to = as.Date("2012-03-13"), by = "month")
+axis(1, at = monthly_ticks, labels = format(monthly_ticks, "%b %Y"), las = 2,cex.axis=0.7)
+lines(lowess(LNA$date, LNA$lna_ab_uml,f=0.1), col = "green",lwd = 2)
+
+plot(LNA$date, LNA$lna_bv, type = "l",xaxt = "n",
+     main = "LNA mean cell size", xlab="",ylab="cubic microns")
+monthly_ticks <- seq(from = as.Date("2002-04-18"), to = as.Date("2012-03-13"), by = "month")
+axis(1, at = monthly_ticks, labels = format(monthly_ticks, "%b %Y"), las = 2,cex.axis=0.7)
+lines(lowess(LNA$date, LNA$lna_bv,f=0.1), col = "blue", lwd = 2)
+
+
+plot(LNA$date, LNA$lna_b, type = "l",xaxt = "n",
+     main = "Biomass", xlab="",ylab="cubic microns")
+monthly_ticks <- seq(from = as.Date("2002-04-18"), to = as.Date("2012-03-13"), by = "month")
+axis(1, at = monthly_ticks, labels = format(monthly_ticks, "%b %Y"), las = 2,cex.axis=0.7)
+lines(lowess(LNA$date, LNA$lna_b,f=0.1), col = "purple", lwd = 2)
+
+plot(LNA$date, LNA$percent_lna_bb, type = "l",xaxt = "n",
+     main = "% Biomass", xlab="",ylab="Percent")
+monthly_ticks <- seq(from = as.Date("2002-04-18"), to = as.Date("2012-03-13"), by = "month")
+axis(1, at = monthly_ticks, labels = format(monthly_ticks, "%b %Y"), las = 2,cex.axis=0.7)
+lines(lowess(LNA$date, LNA$percent_lna_bb,f=0.1), col = "red", lwd = 2)
+
+plot(LNA$date, LNA$temp_5_m_e2, type = "l",xaxt = "n",
+     main = "Temp", xlab="",ylab="Deg C")
+monthly_ticks <- seq(from = as.Date("2002-04-18"), to = as.Date("2012-03-13"), by = "month")
+axis(1, at = monthly_ticks, labels = format(monthly_ticks, "%b %Y"), las = 2,cex.axis=0.7)
+lines(lowess(LNA$date, LNA$temp_5_m_e2,f=0.1), col = "black", lwd = 2)
+```
+
+
+_How do you interpret these plots?_
+
+
+LNA abundance: peaks in August/September, 2008 to 2009 looks a little wonky (low throughout 2008, then very high around fall of 2009)
+
+LNA cell size: peaks around April, "Crash" in January 2009 is wonky then does not recover (lower than other years)
+
+Biomass: typically peaks in august/september, crash and large peak in Aug/Sep of 2009. 
+
+% Biomass: typically a large drop in April. April 2008 had substantially less of a dip, which carried on through at least 2012
+
+Temp: fairly regular peaks and troughs where you'd expect 
+
+I am wondering if maybe there was, like, a bloom or something in 2008 and it takes a while to recover
+
+# 3. 
+
+_Let’s create statistical models to test for long-term trends, as well as relationships with temperature. Because the sampling is monthly, with only a couple gaps, we can treat the time series as one measured at discrete intervals. To keep track of the sample order you’ll need to construct a new column which numbers each sample in the order they were sampled. I.e., the column should look like 1, 2, 3, 4, etc., where the numbers correspond to the month in the time series. You can use the year and month columns to construct this._
+
+
+```{r}
+LNA_sorted <- LNA[order(LNA$date), ]
+
+LNA_sorted$sample_number <- seq_len(nrow(LNA_sorted))
+```
+
+
+Raw data: distributions
+
+```{r}
+hist(log(LNA_sorted$lna_ab_uml))
+LNA_sorted$ab_log <- log(LNA_sorted$lna_ab_uml)
+hist(log(LNA_sorted$lna_bv))
+LNA_sorted$bv_log<-log(LNA_sorted$lna_bv)
+hist(sqrt(LNA_sorted$lna_b))
+LNA_sorted$b_sq <-sqrt(LNA_sorted$lna_b)
+hist(LNA_sorted$percent_lna_bb)
+hist(LNA_sorted$temp_5_m_e2)
+```
+
+
+
+
+
+_Use linear models to test for long term (linear) trends in the five variables: LNA abundance, LNA cell size, LNA biomass, LNA percent biomass, and temperature._
+
+
+```{r}
+#abundance
+lm.ab = gls(ab_log ~ sample_number, data = LNA_sorted,method = "ML")
+LNA_sorted$resid.lmab.raw = resid(lm.ab)
+
+ggAcf(LNA_sorted$resid.lmab.raw) + labs(title = 'abundance raw residuals, date as predictor')
+#summary(lm.ab)
+```
+
+```{r}
+#cell size
+lm.bv = gls(bv_log ~ sample_number, data = LNA_sorted,method = "ML")
+LNA_sorted$resid.bv.raw = resid(lm.bv)
+ggAcf(LNA_sorted$resid.bv.raw) + labs(title = 'cell size raw residuals, date predictor')
+#summary(lm.bv)
+```
+
+```{r}
+#biomass 
+lm.b = gls(b_sq ~ sample_number, data = LNA_sorted,method = "ML")
+LNA_sorted$resid.b.raw = resid(lm.b)
+ggAcf(LNA_sorted$resid.b.raw) + labs(title = 'biomass raw residuals, date predictor')
+#summary(lm.b)
+```
+
+```{r}
+#percent biomass
+lm.bb = gls(percent_lna_bb ~ sample_number, data = LNA_sorted,method = "ML")
+LNA_sorted$resid.bb.raw = resid(lm.bb)
+ggAcf(LNA_sorted$resid.bb.raw) + labs(title = 'percent biom raw residuals, date predictor')
+#summary(lm.bb)
+```
+
+
+```{r}
+#temp
+lm.t = gls(temp_5_m_e2 ~ sample_number, data = LNA_sorted,method = "ML")
+LNA_sorted$resid.t.raw = resid(lm.t)
+ggAcf(LNA_sorted$resid.t.raw) + labs(title = 'temp raw residuals, date predictor')
+#summary(lm.t)
+```
+
+
+
+
+
+_For each of these models, assess whether the residuals show evidence of temporal autocorrelation_
+
+It looks like they all do. 
+
+
+
+
+_If autocorrelation is present, add a residual autocorrelation component to your model._
+
+
+```{r}
+gl.ab = gls(ab_log ~ sample_number, data = LNA_sorted,correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.ab,type = 'normalized')) + labs(title = 'normalized residuals, abundance response')
+#summary(gl.ab)
+```
+
+```{r}
+gl.bv = gls(bv_log ~ sample_number, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.bv, type = 'normalized')) + labs(title = 'normalized residuals, cellsize response')
+#summary(gl.bv)
+```
+
+
+```{r}
+gl.b = gls(b_sq ~ sample_number, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.b, type = 'normalized')) + labs(title = 'normalized residuals, biomass response')
+#summary(gl.b)
+```
+
+
+```{r}
+gl.bb = gls(percent_lna_bb ~ sample_number, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.bb, type = 'normalized')) + labs(title = 'normalized residuals, %biomass response')
+#summary(gl.bb)
+```
+
+
+```{r}
+gl.t = gls(temp_5_m_e2 ~ sample_number, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.t, type = 'normalized')) + labs(title = 'normalized residuals, temp response')
+#summary(gl.t)
+```
+
+
+
+
+
+_Assess whether the model successfully accounted for autocorrelation._
+
+.... not... uh, maybe? close for abundance, cell size, and biomass.less close for % biomass, not very close for temp. Was it supposed to? I feel like I'm not doing anything right anymore. 
+
+
+_What have you learned from these models? _
+
+There is maybe some residual temporal autocorrelation, but there could be other factors explaining that autocorrelation too? I am also wondering if I should give up pretending I can learn and go work in one of Trump's beautiful new tariff factories until I get made into glue like Boxer in Animal Farm I don't know who cares wah wah baby crying
+
+
+
+_Does accounting for autocorrelation change the results?_
+Yes, now just the temporal collection aspect isn't enough. Which is probably more right than not for them all! 
+
+
+
+
+# 4.
+
+_Perform a similar set of analyses using temperature as the predictor, to test whether temperature can explain variation in the four LNA metrics, and whether autocorrelation needs to be accounted for when testing these relationships._
+
+Abundance 
+```{r}
+gl.ab.t = gls(ab_log ~ temp_5_m_e2, data = LNA_sorted, method="ML")
+ggAcf(resid(gl.ab.t, type = 'normalized')) + labs(title = 'normalized residuals, abundance response by temp')
+#this one wins 
+
+
+
+gl.ab.t.cor = gls(ab_log ~ temp_5_m_e2, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method ="ML")
+ggAcf(resid(gl.ab.t.cor, type = 'normalized')) + labs(title = 'normalized residuals, abundance response by temp AR1')
+
+AICc(gl.ab.t)
+AICc(gl.ab.t.cor)
+summary(gl.ab.t)
+summary(gl.ab.t.cor)
+
+#autocorrelation does not need to be accounted for
+```
+
+cell size 
+```{r}
+gl.bv.t = gls(bv_log ~ temp_5_m_e2, data = LNA_sorted, method="ML")
+ggAcf(resid(gl.bv.t, type = 'normalized')) + labs(title = 'normalized residuals, cellsize response by temp')
+#not good, need correlation
+
+
+gl.bv.t.cor = gls(bv_log ~ temp_5_m_e2, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.bv.t.cor, type = 'normalized')) + labs(title = 'normalized residuals, cellsize response by temp AR1')
+#Better! Maybe need another level though 
+
+gl.bv.tt = gls(bv_log ~ temp_5_m_e2, data = LNA_sorted, correlation =corARMA(form =~ sample_number, p = 3, q = 3),method = "ML")
+ggAcf(resid(gl.bv.tt, type = 'normalized')) + labs(title = 'normalized residuals, cellsize response by temp AR2MA2')
+#this looks pretty okay I think? 
+
+AICc(gl.bv.t)
+AICc(gl.bv.t.cor)
+AICc(gl.bv.tt)
+summary(gl.bv.t)
+summary(gl.bv.t.cor)
+summary(gl.bv.tt)
+```
+
+Biomass
+```{r}
+
+gl.b.t = gls(b_sq ~ temp_5_m_e2, data = LNA_sorted, method="ML")
+ggAcf(resid(gl.b.t, type = 'normalized')) + labs(title = 'normalized residuals, biomass response by temp')
+#all good?
+
+
+gl.b.t.cor = gls(b_sq ~ temp_5_m_e2, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.b.t.cor, type = 'normalized')) + labs(title = 'normalized residuals, biomass response by temp AR1')
+# not needed
+
+AICc(gl.b.t)
+AICc(gl.b.t.cor)
+summary(gl.b.t)
+summary(gl.b.t.cor)
+```
+
+Percent Biomass 
+```{r}
+gl.bb.t = gls(percent_lna_bb ~ temp_5_m_e2, data = LNA_sorted, method="ML")
+ggAcf(resid(gl.bb.t, type = 'normalized')) + labs(title = 'normalized residuals, %biomass response by temp')
+#nope, autocorrelation
+
+
+gl.bb.t.cor = gls(percent_lna_bb ~ temp_5_m_e2, data = LNA_sorted, correlation =corAR1(form =~ sample_number),method = "ML")
+ggAcf(resid(gl.bb.t.cor, type = 'normalized')) + labs(title = 'normalized residuals, %biomass response by temp AR1')
+#still a bit at lag 11
+
+gl.bb.tt = gls(percent_lna_bb ~ temp_5_m_e2, data = LNA_sorted, correlation =corARMA(form =~ sample_number, p = 4, q = 4),method = "ML")
+ggAcf(resid(gl.bb.tt, type = 'normalized')) + labs(title = 'normalized residuals, %biomass response 4AR4MA')
+
+
+AICc(gl.bb.t)
+AICc(gl.bb.t.cor)
+AICc(gl.bb.tt)
+summary(gl.bb.t)
+summary(gl.bb.t.cor)
+summary(gl.bb.tt)
+
+```
+
+
+
+_Make appropriate plots of the results and discuss the magnitude of the relationships._
+```{r}
+#abundance 
+ab<-plot(ggeffect(gl.ab.t, terms=c("temp_5_m_e2")))+ggtitle("LNA abundance")
+
+
+
+#cell size
+plot<-(ggeffect(gl.bv.tt, terms=c("temp_5_m_e2")))
+plot$predicted <- exp(plot$predicted)
+plot$conf.low <- exp(plot$conf.low)
+plot$conf.high <- exp(plot$conf.high)
+bv<-plot(plot)+ggtitle("LNA cell size")
+
+
+#biomass 
+b<-plot(ggeffect(gl.b.t, terms=c("temp_5_m_e2")))+ggtitle("Biomass")
+
+#percent biomass 
+bb<-plot(ggeffect(gl.bb.tt, terms=c("temp_5_m_e2")))+ggtitle("%Biomass")
+
+grid.arrange(grobs=list(ab,bv,b,bb))
+```
+
+
+```{r}
+#summary(gl.ab.t)
+#summary(gl.bv.tt)
+#summary(gl.b.t)
+#summary(gl.bb.tt)
+```
+
+
+Magnitudes from summaries (I know this isn't very elegant and I could pull stuff out)
+
+```{r}
+#Abundance
+a<-exp(0.09127)-1
+100*(a)
+#Cell Size 
+b<-exp(-0.0097503)-1
+100*(b)
+#Biomass 
+c<-2*(0.0874949)
+100*(c)
+#%Biomass
+100*(0.01506892)
+
+
+```
+
+Abundance: for every degree increase in C, abundance goes up by 9.6%
+
+Cell size: for every degree increase in C, cell size goes DOWN by 0.97%
+
+Biomass
+For every degree increase in C, biomass goes up by 17.5%
+
+% Biomass 
+For every degree increase in C, biomass goes up by 1.5%
+
+
+_Considering the whole set of analyses, what are your interpretations of the dynamics and drivers of LNA bacteria in this system?_
+
+I think when it gets hot LNA abundance and biomass go up, which just happens to be during the summer and is not so much dependent upon previous years/time periods-- I think because cell size and percent biomass had some residual autocorrelation, they are more impacted by previous events. However, when things heat up cell size goes down just a bit, and biomass goes up by a bit. This makes sense looking at the exploratory time plots over the years. 

@@ -1,0 +1,236 @@
+---
+title: "konicek_homework_8"
+author: "kelli"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+# Libraries
+```{r}
+library(tidyverse)
+library(car)
+library(arm)
+library(pwr)
+```
+
+### Dear Kyle, I did bad and started this the night before it was due. I ran into something my brain had to think about for more than two seconds and I guess that did me in. If I can resubmit this for a better grade later after I actually read and put in effort, I will do that.
+
+Homework 8 – Replication, Statistical Power, and Type M Error
+
+Imagine that you want to test how a warming climate affects primary production in
+grasslands. 
+
+You will perform an in situ warming experiment, in which you use ceramic
+heaters to warm 2 x 2 meter experimental plots by 4ºC, continuously for two years.
+
+
+Control plots are unwarmed, and the treatment and control plots will be randomly
+assigned. 
+
+Biomass production is measured at the plot scale using appropriate methods.
+
+
+# (1)
+
+You have limited time and money, which means that the number of replicate treatment
+and control plots is limited. Before designing and performing the study, let’s consider how
+the number of replicates will affect our statistical power: our ability to detect an effect of
+warming.
+
+
+Based on previous studies in similar environments, we can get a sense for what the effect
+size might be: in other words, the true magnitude of the warming effect. 
+
+We can also get a sense for how variable productivity is between plots in the same treatment, for reasons
+outside of our control (i.e., the residual noise). 
+
+Assume that the *true treatment mean is 460*, and the true *control mean is 415* (the numbers are above ground net primary production (ANPP) – grams per square meter per year). 
+
+Assume that the *standard deviation of the variation between plots is 110*. These numbers are based on real data synthesized in the attached paper by Lemoine et al.
+
+
+Start by assuming three replicates each of the treatment and control plots. 
+
+_Perform 1000 simulations, where each time you draw three treatment ANPP values and three control ANPP values, using the appropriate means and standard deviation, from a normal distribution._
+```{r}
+
+#make a function for the simulations
+
+simulations <- function(x) { 
+
+#now put the simulation into a loop, to see how often the null relationship generates a significant p-value
+
+#define the number of iterations of the simulation
+nsims = 1000
+#make a vector to save the estimated slope, f test p value for treatment effect 
+slope.saved = f.p.value.saved=plot= vector()
+
+for (i in 1:nsims) {
+#generate a predictor and a response 
+treat = rnorm(x, mean = 460, sd = 110)
+ctrl = rnorm(x, mean = 415, sd = 110)
+#For each random draw, fit a linear model testing for a treatment effect.
+model = lm(treat ~ ctrl)
+#save the slope estimate
+slope.saved[i] = coef(model)[2]
+#save p-value from an F-test for the treatment effect 
+f.p.value.saved[i] = Anova(model)$P[1]
+}
+
+# Calculate the proportion
+proportion_under <- sum(f.p.value.saved < 0.05)/nsims
+
+return(list(slope=slope.saved,p=f.p.value.saved,proportion= proportion_under, plot=plot))
+}
+
+sample.three <- simulations(3)
+```
+
+
+
+_At the end you should have 1000 p-values and 1000 coefficient values._ 
+
+I do! 
+
+
+_What proportion of the p-values are less than 0.05?_
+```{r}
+sample.three$proportion
+hist(sample.three$p)
+```
+
+
+This is your statistical power, under this design, effect size, and residual noise. -- is... is it? 
+
+
+_Now repeat this whole process using different numbers of replicates: 5, 10, 20, 50, 100. _
+```{r}
+sample.Afive <-simulations(5)
+
+sample.Bten <-simulations(10)
+
+sample.Ctwenty<-simulations(20)
+
+sample.Dfifty<-simulations(50)
+
+sample.Ehundo<-simulations(100)
+
+sample.fuck <-simulations(10000)
+```
+
+ALRIGHT well I am confused, I think because I am missing something pretty fundamental-- the coefficent slopes change when I up the sample size (x in my function), but not the p value. That makes sense since these aren't actually related terms in my code, maybe? is that the part I have to change? This is the part where I had to think for a second and I guess I can't do that anymore so I will ask my advisor if it's time to hang my hat up and go twist on toothpaste caps at the toothpaste factory or somethin
+
+_Plot the statistical power vs. the number of replicates. _
+
+
+_How much replication do you need to achieve a power of 0.25?_
+
+```{r}
+
+n <- (460-415)/110
+# Parameters
+desired_power <- 0.25  # Desired power
+alpha <- 0.05  # Significance level
+effect_size <- n 
+
+# Calculate required sample size
+power_result <- pwr.t.test(d = effect_size, sig.level = alpha, power = desired_power, type = "two.sample")
+
+# Print the result
+print(power_result)
+```
+Well if I just try to calculate this myself it seems like the 20 sample size should have a high enough proportion of p values under 0.05... but it's essentially the same as all the other ones each time I do the simulation? 
+
+
+This means that when there is a real treatment effect, you will detect it (only) 25% of the time.
+
+
+
+
+# (2)- none of this is done
+
+Now let’s use the simulation results to answer a different question. For situations where
+statistical power is low, a treatment effect can only be ‘significant’ if it is quite large, and
+this may cause the treatment effect to be exaggerated by chance. This has been termed
+Type M error, where the M stands for magnitude, because you are making an error about
+the magnitude of the effect (see the attached paper).
+
+For each of the simulations you performed above, you saved the model coefficients. So
+you should have 1000 coefficients for each level of replication (3, 5, 10, 20, 50, 100).
+
+
+_Take those coefficients, and for each level of replication calculate the mean of the coefficients using only models where p < 0.05._ 
+
+
+This is simulating the following process: if you perform the experiment, and p > 0.05, you report 'no effect’, but if p < 0.05 you report ‘significant effect’. We want to know if the reported significant effects are biased.
+
+_How does the mean of the significant coefficients change as the number of replicates increases?_ 
+
+
+Recall that because this is a simulation, we know the true value of the treatment difference: it’s 461 - 415 = 46. 
+
+
+_How much larger is the simulated value from the significant experiments, compared to the true value?_
+
+This is the type M error. 
+
+_What are the potential implications for our understanding of climate change, if most warming experiments have low power?_
+___________________________
+FIXED SHIT
+
+```{r}
+nreps = c(3,5,10,20,50,100)
+
+control.mean = 415
+treatment.mean=460
+sd=110
+nsims=1000
+p.save=coef.save=matrix(nrow=nsims, ncol=length(nreps))
+#outer loop changes j, goes from 1 to length of nreps(top of replicates)
+#for each one of those, now changing i, from 1 to 1000
+for(j in 1:length(nreps_)) {
+  for(i in 1:sims) {
+    treat.vals=rnorm(nreps[j],treatment.mean, sd)
+    control.vals=rnorm(nreps[j],control.mean,sd)
+    response=c(treat.vals,control.vals) #concatenate values so you have a response variable
+    treatment=facetor(c(rep('treatment',nreps[j]),
+                        rep('control',nreps[j])))
+    datause=dataframe(response,treatment)
+    mod=lm(response~treatment, data=datause)
+    p.save[i,j]=Anova(mod)$P[1]
+    coef.save[i,j] = coef(mod)[2]
+  }
+}
+```
+
+
+```{r}
+powers=apply(p.save,2,function(x),sum(x<0.05)/length(x)) #do you want to do operations on rows or columns? in this case columns because they represent different reps-- what proportion of p values are less than 0.05-- 2 represents doing something to columns-- then define a function
+plot(powers~nreps,type='b',pch=19,ylim=c(0,1) #power is quite low when replication is low 
+```
+
+
+
+type M problem - the times you do see significance are probably going to be biased because of the power problem
+
+look at mean of coefficents JUSt for the significant p values 
+
+"exaggeration ratio" 
+
+```{r}
+typeM = vetor()
+
+for (j in 1: length(nreps)) {
+  typeM[j] = means(coef.save[,j][p.save[,j] < 0.05])
+}
+```
+
+
+
+
